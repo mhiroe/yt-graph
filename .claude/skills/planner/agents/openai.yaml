@@ -1,0 +1,4 @@
+interface:
+  display_name: "Planner"
+  short_description: "Clarify and decompose a v4 wish at the document level, then present the readiness decision to the user"
+  default_prompt: "Use planner to clarify and decompose one wish in the current repo under workflow v4. Work at the document level only, resolve component ids through the vendored Core read ops, and present the readiness decision to the user without self-approving."

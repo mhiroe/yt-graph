@@ -1,0 +1,4 @@
+interface:
+  display_name: "Done"
+  short_description: "Complete one v4 task with recorded verification; never closes the wish"
+  default_prompt: "Use done to complete one finished task in the current repo under workflow v4. Send the task's component_id and state_revision with the verification performed. Never close the wish — wish closure is an explicit user instruction only."

@@ -1,0 +1,11 @@
+name: yt-graph
+version: 0.1.0
+targets: [codex, claude]
+dependencies:
+  apm:
+    - path: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+    - path: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-entrypoint
+      targets: [codex]
+compilation:
+  agents_md:
+    mode: managed_section

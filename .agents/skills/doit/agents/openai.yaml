@@ -1,0 +1,4 @@
+interface:
+  display_name: "Do It"
+  short_description: "Execute one v4 task through the vendored Core once the user has given the readiness decision"
+  default_prompt: "Use doit to execute one ready task in the current repo under workflow v4. Start implementation only after task.start_doing returns applied, halt on the first non-applied disposition, then hand bookkeeping to done."

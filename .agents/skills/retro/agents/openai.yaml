@@ -1,0 +1,4 @@
+interface:
+  display_name: "Retro"
+  short_description: "Collect and analyze workflow v4 retrospective journals across repos"
+  default_prompt: "Use retro to collect per-task retrospective journals across v4 repos with wf4-retro-scan.sh, classify findings as wf4 defects / token waste / process friction, and report bounded results."

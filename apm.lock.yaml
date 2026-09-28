@@ -1,0 +1,362 @@
+lockfile_version: '1'
+apm_version: 0.31.0
+dependencies:
+- repo_url: _local/workflow-v4-entrypoint
+  name: workflow-v4-entrypoint
+  version: 0.1.0
+  package_type: apm_package
+  source: local
+  local_path: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-entrypoint
+  target_subset:
+  - codex
+- repo_url: _local/workflow-v4-runtime
+  name: workflow-v4-runtime
+  version: 0.1.0
+  package_type: apm_package
+  deployed_files:
+  - .agents/skills/doit
+  - .agents/skills/doit/SKILL.md
+  - .agents/skills/doit/agents/openai.yaml
+  - .agents/skills/done
+  - .agents/skills/done/SKILL.md
+  - .agents/skills/done/agents/openai.yaml
+  - .agents/skills/planner
+  - .agents/skills/planner/SKILL.md
+  - .agents/skills/planner/agents/openai.yaml
+  - .agents/skills/retro
+  - .agents/skills/retro/SKILL.md
+  - .agents/skills/retro/agents/openai.yaml
+  - .agents/skills/workflow-v4-contract
+  - .agents/skills/workflow-v4-contract/SKILL.md
+  - .agents/skills/workflow-v4-contract/agents/openai.yaml
+  - .agents/skills/workflow-v4-contract/references/contract-format.md
+  - .claude/skills/doit
+  - .claude/skills/doit/SKILL.md
+  - .claude/skills/doit/agents/openai.yaml
+  - .claude/skills/done
+  - .claude/skills/done/SKILL.md
+  - .claude/skills/done/agents/openai.yaml
+  - .claude/skills/planner
+  - .claude/skills/planner/SKILL.md
+  - .claude/skills/planner/agents/openai.yaml
+  - .claude/skills/retro
+  - .claude/skills/retro/SKILL.md
+  - .claude/skills/retro/agents/openai.yaml
+  - .claude/skills/workflow-v4-contract
+  - .claude/skills/workflow-v4-contract/SKILL.md
+  - .claude/skills/workflow-v4-contract/agents/openai.yaml
+  - .claude/skills/workflow-v4-contract/references/contract-format.md
+  deployed_file_hashes:
+    .agents/skills/doit/SKILL.md: sha256:35f44f67e8942d9310a73525cfd9b798604f54c628c1cfb67d09d42357a068ea
+    .agents/skills/doit/agents/openai.yaml: sha256:1849866cb5dc9fbaf4787290fcd8d81748642c340ce8cda64b7c21aed3847177
+    .agents/skills/done/SKILL.md: sha256:f00f77cb2ed583d65018baf596301650b852f9555858a3b31c6db69593d0fde0
+    .agents/skills/done/agents/openai.yaml: sha256:84039d5c789e87cccb94d193dc1aae9e5b348978d07d794fcc94f9a26e25853d
+    .agents/skills/planner/SKILL.md: sha256:419cd4791b2cf99c11ec3da002d327bbf12415dc6a2a1286f33054fa15b930ec
+    .agents/skills/planner/agents/openai.yaml: sha256:b4d1c0a92f68e8d57ab04ec62216d9ba0a957c809d71db29cf835f0e199c6336
+    .agents/skills/retro/SKILL.md: sha256:cab5423d122a3a2c2955723a74e2335d257820796766f34356ab40ff5a3fa86c
+    .agents/skills/retro/agents/openai.yaml: sha256:aa51ea1c4211aaa065def9ab50bbe6b9b274feb65a839f4ee6e7778b0f00fb6f
+    .agents/skills/workflow-v4-contract/SKILL.md: sha256:ed518c9936be18dd0708f96523f698ab250319a0831d944caa2424bc5f7b7052
+    .agents/skills/workflow-v4-contract/agents/openai.yaml: sha256:1c28d78d52fed3248517b73bc86a322a4f2ae81e07f31062ddcbf6808ce0b6fa
+    .agents/skills/workflow-v4-contract/references/contract-format.md: sha256:b2e081f64cf41daa9d2590973aa9f604801fddc08cffe13e35fef51aa2c740d4
+    .claude/skills/doit/SKILL.md: sha256:35f44f67e8942d9310a73525cfd9b798604f54c628c1cfb67d09d42357a068ea
+    .claude/skills/doit/agents/openai.yaml: sha256:1849866cb5dc9fbaf4787290fcd8d81748642c340ce8cda64b7c21aed3847177
+    .claude/skills/done/SKILL.md: sha256:f00f77cb2ed583d65018baf596301650b852f9555858a3b31c6db69593d0fde0
+    .claude/skills/done/agents/openai.yaml: sha256:84039d5c789e87cccb94d193dc1aae9e5b348978d07d794fcc94f9a26e25853d
+    .claude/skills/planner/SKILL.md: sha256:419cd4791b2cf99c11ec3da002d327bbf12415dc6a2a1286f33054fa15b930ec
+    .claude/skills/planner/agents/openai.yaml: sha256:b4d1c0a92f68e8d57ab04ec62216d9ba0a957c809d71db29cf835f0e199c6336
+    .claude/skills/retro/SKILL.md: sha256:cab5423d122a3a2c2955723a74e2335d257820796766f34356ab40ff5a3fa86c
+    .claude/skills/retro/agents/openai.yaml: sha256:aa51ea1c4211aaa065def9ab50bbe6b9b274feb65a839f4ee6e7778b0f00fb6f
+    .claude/skills/workflow-v4-contract/SKILL.md: sha256:ed518c9936be18dd0708f96523f698ab250319a0831d944caa2424bc5f7b7052
+    .claude/skills/workflow-v4-contract/agents/openai.yaml: sha256:1c28d78d52fed3248517b73bc86a322a4f2ae81e07f31062ddcbf6808ce0b6fa
+    .claude/skills/workflow-v4-contract/references/contract-format.md: sha256:b2e081f64cf41daa9d2590973aa9f604801fddc08cffe13e35fef51aa2c740d4
+  source: local
+  local_path: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+deployments:
+- kind: project-relative
+  target: claude
+  value: .claude/skills/doit
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: null
+- kind: project-relative
+  target: claude
+  value: .claude/skills/doit/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:35f44f67e8942d9310a73525cfd9b798604f54c628c1cfb67d09d42357a068ea
+- kind: project-relative
+  target: claude
+  value: .claude/skills/doit/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:1849866cb5dc9fbaf4787290fcd8d81748642c340ce8cda64b7c21aed3847177
+- kind: project-relative
+  target: claude
+  value: .claude/skills/done
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: null
+- kind: project-relative
+  target: claude
+  value: .claude/skills/done/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:f00f77cb2ed583d65018baf596301650b852f9555858a3b31c6db69593d0fde0
+- kind: project-relative
+  target: claude
+  value: .claude/skills/done/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:84039d5c789e87cccb94d193dc1aae9e5b348978d07d794fcc94f9a26e25853d
+- kind: project-relative
+  target: claude
+  value: .claude/skills/planner
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: null
+- kind: project-relative
+  target: claude
+  value: .claude/skills/planner/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:419cd4791b2cf99c11ec3da002d327bbf12415dc6a2a1286f33054fa15b930ec
+- kind: project-relative
+  target: claude
+  value: .claude/skills/planner/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:b4d1c0a92f68e8d57ab04ec62216d9ba0a957c809d71db29cf835f0e199c6336
+- kind: project-relative
+  target: claude
+  value: .claude/skills/retro
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: null
+- kind: project-relative
+  target: claude
+  value: .claude/skills/retro/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:cab5423d122a3a2c2955723a74e2335d257820796766f34356ab40ff5a3fa86c
+- kind: project-relative
+  target: claude
+  value: .claude/skills/retro/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:aa51ea1c4211aaa065def9ab50bbe6b9b274feb65a839f4ee6e7778b0f00fb6f
+- kind: project-relative
+  target: claude
+  value: .claude/skills/workflow-v4-contract
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: null
+- kind: project-relative
+  target: claude
+  value: .claude/skills/workflow-v4-contract/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:ed518c9936be18dd0708f96523f698ab250319a0831d944caa2424bc5f7b7052
+- kind: project-relative
+  target: claude
+  value: .claude/skills/workflow-v4-contract/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:1c28d78d52fed3248517b73bc86a322a4f2ae81e07f31062ddcbf6808ce0b6fa
+- kind: project-relative
+  target: claude
+  value: .claude/skills/workflow-v4-contract/references/contract-format.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:b2e081f64cf41daa9d2590973aa9f604801fddc08cffe13e35fef51aa2c740d4
+- kind: project-relative
+  target: codex
+  value: .agents/skills/doit
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: null
+- kind: project-relative
+  target: codex
+  value: .agents/skills/doit/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:35f44f67e8942d9310a73525cfd9b798604f54c628c1cfb67d09d42357a068ea
+- kind: project-relative
+  target: codex
+  value: .agents/skills/doit/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:1849866cb5dc9fbaf4787290fcd8d81748642c340ce8cda64b7c21aed3847177
+- kind: project-relative
+  target: codex
+  value: .agents/skills/done
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: null
+- kind: project-relative
+  target: codex
+  value: .agents/skills/done/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:f00f77cb2ed583d65018baf596301650b852f9555858a3b31c6db69593d0fde0
+- kind: project-relative
+  target: codex
+  value: .agents/skills/done/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:84039d5c789e87cccb94d193dc1aae9e5b348978d07d794fcc94f9a26e25853d
+- kind: project-relative
+  target: codex
+  value: .agents/skills/planner
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: null
+- kind: project-relative
+  target: codex
+  value: .agents/skills/planner/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:419cd4791b2cf99c11ec3da002d327bbf12415dc6a2a1286f33054fa15b930ec
+- kind: project-relative
+  target: codex
+  value: .agents/skills/planner/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:b4d1c0a92f68e8d57ab04ec62216d9ba0a957c809d71db29cf835f0e199c6336
+- kind: project-relative
+  target: codex
+  value: .agents/skills/retro
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: null
+- kind: project-relative
+  target: codex
+  value: .agents/skills/retro/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:cab5423d122a3a2c2955723a74e2335d257820796766f34356ab40ff5a3fa86c
+- kind: project-relative
+  target: codex
+  value: .agents/skills/retro/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:aa51ea1c4211aaa065def9ab50bbe6b9b274feb65a839f4ee6e7778b0f00fb6f
+- kind: project-relative
+  target: codex
+  value: .agents/skills/workflow-v4-contract
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: null
+- kind: project-relative
+  target: codex
+  value: .agents/skills/workflow-v4-contract/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:ed518c9936be18dd0708f96523f698ab250319a0831d944caa2424bc5f7b7052
+- kind: project-relative
+  target: codex
+  value: .agents/skills/workflow-v4-contract/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:1c28d78d52fed3248517b73bc86a322a4f2ae81e07f31062ddcbf6808ce0b6fa
+- kind: project-relative
+  target: codex
+  value: .agents/skills/workflow-v4-contract/references/contract-format.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:b2e081f64cf41daa9d2590973aa9f604801fddc08cffe13e35fef51aa2c740d4

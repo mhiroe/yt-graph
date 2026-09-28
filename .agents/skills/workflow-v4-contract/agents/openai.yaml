@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workflow v4 Contract"
+  short_description: "Vendored node / spec / rule-layer format reference for workflow v4 repos"
+  default_prompt: "Read workflow-v4-contract/references/contract-format.md only when a workflow task needs the canonical node, spec, rule-layer, or docs-layout format."

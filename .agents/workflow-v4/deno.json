@@ -1,0 +1,39 @@
+{
+  "tasks": {
+    "check": "deno check src/mod.ts src/cli/main.ts src/harness/skill_entry.ts tests/ f1/run.ts",
+    "test": "deno test --allow-read --allow-write --allow-run --allow-env",
+    "verify": "deno check src/mod.ts src/cli/main.ts src/harness/skill_entry.ts tests/ f1/run.ts && deno test --allow-read --allow-write --allow-run --allow-env && deno fmt --check && deno lint && deno task contract:check",
+    "cli": "deno run --allow-read --allow-write --allow-ffi --allow-env src/cli/main.ts",
+    "skill": "deno run --allow-read --allow-write --allow-ffi --allow-env --allow-run src/harness/skill_entry.ts",
+    "f1": "deno run --allow-read --allow-write --allow-run --allow-ffi --allow-env f1/run.ts",
+    "contract": "python3 ../../../scripts/build_workflow_contract.py --root ../../..",
+    "contract:check": "python3 ../../../scripts/build_workflow_contract.py --root ../../.. --check --allow-dirty",
+    "contract:release-check": "python3 ../../../scripts/build_workflow_contract.py --root ../../.. --check"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true
+  },
+  "fmt": {
+    "lineWidth": 100,
+    "useTabs": false,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": false,
+    "exclude": [
+      "README.md",
+      "dist"
+    ]
+  },
+  "lint": {
+    "rules": {
+      "tags": [
+        "recommended"
+      ]
+    }
+  },
+  "exclude": [
+    "dist"
+  ]
+}
