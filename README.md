@@ -30,15 +30,23 @@ grow a navigable graph of similar / interesting channels.
 
 ## Usage
 
-- FIXME(project): write a representative run example here — not yet implemented.
+- App code lives in the bootstrap iteration: `docs/iterations/bootstrap/app/`.
+- `cd docs/iterations/bootstrap/app && pnpm install && pnpm dev` starts the
+  local API (`:8787`, SQLite at `app/data/yt-graph.sqlite`) and the Vite web UI
+  (`:5173`, `/api` proxied to the API).
 
 ## script / app usage
 
-- FIXME(project): list the public commands or scripts here — not yet implemented.
+- `pnpm dev` — run API + web UI together (`scripts/dev.mjs`)
+- `pnpm dev:api` / `pnpm dev:web` — run either side alone
+- `pnpm smoke` — self-contained API boot check (scratch port, in-memory DB)
+- `pnpm lint` — `tsc --noEmit` typecheck (thin lint until a real linter lands)
+- `pnpm build` — typecheck + `vite build`
 
 ## Verification
 
-- まずは `pnpm exec node path/to/script.js --help` のような smoke 確認を最小検証とします。
+- Minimum check is a smoke run: `cd docs/iterations/bootstrap/app && pnpm smoke`
+  boots the API and verifies `/api/health` + `/api/graph`.
 
 ## Environment
 
@@ -52,6 +60,8 @@ grow a navigable graph of similar / interesting channels.
 
 ## Setup
 
-1. FIXME(project): list the required tools (pnpm, YouTube API credentials / OAuth client, chappy-cli, jev)
-2. FIXME(project): write the dependency install command
-3. FIXME(project): write the shortest path to first run
+1. Required tools: Node.js 22.x (`node:sqlite` via `--experimental-sqlite`)
+   and `pnpm`. YouTube credentials / chappy-cli / jev are only needed for the
+   live adapters; the fixture adapter path needs no credentials.
+2. `cd docs/iterations/bootstrap/app && pnpm install`
+3. `pnpm dev` → open http://localhost:5173

@@ -90,7 +90,7 @@ Consult record (2026-09-29, discovery strategy 拡張):
 YouTube 取得は adapter の背後に置き、credential が無い間は fixture adapter で
 pipeline と UI を通す。
 
-- [ ] app skeleton: pnpm + Vite + React + TS + Three.js 3D graph + local API + ^t-01M3NXF509
+- [done] app skeleton: pnpm + Vite + React + TS + Three.js 3D graph + local API + ^t-01M3NXF509
       SQLite provenance-first schema (channel / edge / discovery_evidence /
       channel_snapshot / judgment / human_decision)
   - smoke: `pnpm install` → `pnpm dev` で UI + API 起動、README 同一 diff

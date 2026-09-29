@@ -75,3 +75,13 @@ constitution: none (repo autonomy)
     (2026-09-28 に Google docs で検証済み)。
   - expansion の主経路は `playlistItems.list` / `channels.list` /
     `subscriptions.list` (shared 10k-unit bucket) とする。
+
+### local store
+
+scope: 全域
+constitution: none (repo autonomy)
+
+- ローカル DB は `node:sqlite` (Node 22, `--experimental-sqlite` flag 要) を
+  使う。native module (better-sqlite3 等) は PoC では持ち込まない
+  (2026-09-29, t-01M3NXF509 で確定 — install を credential/ネイティブ
+  build 無しで通すため)。
