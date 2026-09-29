@@ -71,7 +71,9 @@ Consult record (2026-09-29, discovery strategy 拡張):
   yt-graph の収集・採用 channel を観る。子供も視聴に使うため、
   再生面は採用済みに限る curated surface (詳細は spec_product.md)。
   kid 要件: 視聴 limit / 親ロック / 学習ポイント制 / 30 分ごと 10 分の
-  休憩 / partner (dokoitsu) 連携。
+  休憩 / partner (dokoitsu) 連携。再生 browser は ul-browser 優先
+  (user 2026-09-29)。アニメ channel 一覧の希望あり — starter set は
+  `.agent-state/anime-channels-2026-09-29.md`。
 - 追加 direction (user 2026-09-29): x-graph 同様の調査画面 (inspection
   UI) と adhoc mode (人間起点の one-shot 探索/評価)。詳細は
   `docs/spec_product.md` scope / 制約。

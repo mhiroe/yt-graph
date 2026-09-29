@@ -68,6 +68,10 @@ tags:
       長さ / 量を制御する。視聴リズムとして 30 分ごとに 10 分の休憩を
       入れる。基本機能として登録 channel の視聴も可。
       partner (dokoitsu) との連携を構想 (ポイント・学習管理側)。
+      再生面の browser は **ul-browser** 優先 (使えたら; user
+      2026-09-29)。コンテンツ側の希望: tvtokyo 系などのアニメ
+      channel 一覧 (starter set は
+      `.agent-state/anime-channels-2026-09-29.md`)。
 
 ## users and usage
 
