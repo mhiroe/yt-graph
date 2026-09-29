@@ -70,6 +70,8 @@ Consult record (2026-09-29, discovery strategy 拡張):
 - 再生の方向 (user 2026-09-29): 専用 YouTube 再生 client を別途作り、
   yt-graph の収集・採用 channel を観る。子供も視聴に使うため、
   再生面は採用済みに限る curated surface (詳細は spec_product.md)。
+  kid 要件: 視聴 limit / 親ロック / 学習ポイント制 / 30 分ごと 10 分の
+  休憩 / partner (dokoitsu) 連携。
 - 追加 direction (user 2026-09-29): x-graph 同様の調査画面 (inspection
   UI) と adhoc mode (人間起点の one-shot 探索/評価)。詳細は
   `docs/spec_product.md` scope / 制約。

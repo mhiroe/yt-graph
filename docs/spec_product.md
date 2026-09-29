@@ -63,13 +63,18 @@ tags:
     **子供の視聴にも使う**想定 → 表示対象は採用済み channel に限定する
     curated surface。yt-client / ContentHub webview host との関係は
     別 repo 側で詰める (contenthub_pm と API 契約を調整してから組み込む)
+    - kid 向け要件 (user 2026-09-29): 視聴 limit と parental control
+      (親ロック)。学習ポイント制 — 獲得ポイントに応じて見られる
+      長さ / 量を制御する。視聴リズムとして 30 分ごとに 10 分の休憩を
+      入れる。基本機能として登録 channel の視聴も可。
+      partner (dokoitsu) との連携を構想 (ポイント・学習管理側)。
 
 ## users and usage
 
 - 想定ユーザー: 個人 (自分)。自分の YouTube account で OAuth login して使う。
   - 副次的利用: 再生は専用 client 経由で**子供も使う**想定
     (user 2026-09-29) — 再生面は採用済み channel に限る curated
-    surface であることが前提。
+    surface + 親管理の視聴 limit / 学習ポイント制であることが前提。
 - 典型 flow: OAuth auth → seed channel 選択 → candidate 生成 → jev filter →
   graph 表示 → node 選択で channel preview → 採用 / 除外 route。
 - AI の score は最終判断に使わない。preview を見て人間が route する。
@@ -173,3 +178,5 @@ note: `docs/chatgpt/YouTube発見方法比較.md` — gitignored)。
 - interestingness の定義と jev criteria。
 - graph 表現 (2D/3D、edge semantics)、preview の中身。
 - yt-client / ContentHub 連携の API 契約。
+- 再生 client の詳細 (視聴 limit / 親ロック / 学習ポイントの仕様、
+  dokoitsu との連携契約) — client 側 repo が立つ時に詰める。
