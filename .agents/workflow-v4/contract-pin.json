@@ -1,7 +1,7 @@
 {
-  "contract_artifact": "0.25.0",
-  "artifact_digest": "fc2e3443064555763412db5c24e5c2fc36bb3a6be345ddb80068c0d532e97fed",
-  "runtime_digest": "129e87899e417e356c0a3ac6c6a7dabeee4306a411eb160844084cef74d10105",
-  "producer_commit": "7c079e3bf49cc0d4b5fef68b79f836b4277bbd11",
+  "contract_artifact": "0.26.0",
+  "artifact_digest": "b3b6d0c94d0ce6c20816892fc6af98fae44af2a542fc2775654efb734a44086b",
+  "runtime_digest": "6461c6653cab9f2fce299372ba2576adb130fc26caca37c006069993691a18b4",
+  "producer_commit": "20cb94b50cc41773b2e8bb94b08b4d8cac47634c",
   "producer_module": "dot_config/ai-agents/workflow"
 }

@@ -60,6 +60,22 @@ represents it must carry `^w-...`; if it does not, write the anchor with
 `document.register_component_id`. Unanchored wishes are invisible to
 `cutover.scan` / `cutover.bind`.
 
+The same holds for tasks at plan time: **a planned task must carry its `^t-`
+anchor before it can be dispatched** — `task.start_doing` rejects unanchored
+tasks (`task_document_anchor_missing`). Mint and bind each task node through
+`document.create_task` (raw CLI op), never by writing the `^t-` anchor by hand:
+
+```json
+{"kind":"document.create_task","operation_id":"plan-t-1","wish_component_id":"w-...","expected_revision":<wish rev>,"title":"<task title>","locator":"docs/wish_<x>.md#Tasks"}
+```
+
+`operation_id` must be unique per task. `locator` names the section the
+checkbox line joins (the wish's `Tasks` section or the file root). The
+response's `component_id` is the minted `t-...` id; on `applied` the line
+`- [ ] <title> ^<id>` is written and the projection is bound in the same
+request. To bind an anchor on a Task that already exists (repair), pass
+`component_id` instead of the mint fields.
+
 ## Readiness prerequisites
 
 Before presenting the readiness decision, confirm the wish document carries

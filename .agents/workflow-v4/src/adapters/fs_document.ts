@@ -25,6 +25,7 @@ import {
   checkRelativePath,
   type ChildLinkInput,
   type CreateFileInput,
+  type CreateTaskInput,
   type DocumentChildrenView,
   type DocumentFileNodes,
   type DocumentLocator,
@@ -46,6 +47,7 @@ import {
 import { applyIterationProperties } from "../iterations.ts";
 import {
   applyAttachChild,
+  applyCreateTask,
   applyDetachChild,
   applyMoveHeading,
   applyMoveTaskWithinFile,
@@ -365,6 +367,13 @@ export function createFsDocumentPort(options: FsDocumentPortOptions): DocumentPo
       return runEdit(
         locator.value,
         (raw) => applyMoveHeading(raw, locator.value, parent.value, input, codec),
+      );
+    },
+
+    createTask(input: CreateTaskInput): Result<DocumentOutcome> {
+      return runEdit(
+        input.locator,
+        (raw) => applyCreateTask(raw, input, codec),
       );
     },
 

@@ -10,6 +10,7 @@ import { isVaultComponentId } from "./vault_ids.ts";
 import {
   type ChildLinkInput,
   type CreateFileInput,
+  type CreateTaskInput,
   type DocumentChildrenView,
   type DocumentFileNodes,
   type DocumentLocator,
@@ -1415,6 +1416,112 @@ export function applyRemoveTask(
       component_id: input.component_id,
       locator: locatorText,
       observed_hash: block.hash,
+    },
+    next_raw: next,
+  });
+}
+
+/**
+ * `document.create_task` (Lane I、wish `w-01M3N7RV5K`)。`task.create_planned` が採番した
+ * task の document node を、行末 `^t-...` anchor を持つ checkbox 行として `locator` の
+ * section の自分の本文の末尾へ置く。
+ *
+ * - 同じ `^<id>` の task 行が同じ owner に正しく在れば `noop` (再送)。
+ * - 同じ `^<id>` が別の形か別の owner に在れば `conflict` — 手組みの行を採用しない。
+ * - title は非空白の 1 行だけ。改行と `^` を拒否する — 行末 anchor の形を壊す text を
+ *   task line として書かせない。
+ */
+export function applyCreateTask(
+  raw: string,
+  input: CreateTaskInput,
+  codec: RegionCodec = headingSectionCodec,
+): Result<DocumentEdit> {
+  const taskId = input.component_id;
+  const locatorText = taskLocatorText(input.locator.path, taskId);
+  // Markdown の anchor には vault 形だけを書く (register_component_id と同じ規則)。
+  if (!isVaultComponentId(taskId)) {
+    return err(
+      "invalid_id",
+      `component_id が vault 形 (<m|w|t>-<Crockford base32 10 桁>) でない: ${taskId}`,
+      "component_id",
+    );
+  }
+  const title = input.title.trim();
+  if (title.length === 0 || /[\r\n^]/.test(title)) {
+    return err(
+      "invalid_field_type",
+      "task title には非空白の 1 行だけを渡せる (改行と `^` は含めない)",
+      "title",
+    );
+  }
+  const listing = codec.listSections(raw);
+  if (!listing.ok) return listing;
+  const destination = codec.locateSection(raw, input.locator.heading);
+  if (!destination.ok) return destination;
+
+  const existing = locateTaskBlock(raw, taskId);
+  if (existing.ok) {
+    const placed = placedCorrectly(
+      raw,
+      listing.value,
+      taskId,
+      taskBlockShape(existing.value),
+      destination.value,
+    );
+    if (placed === undefined) {
+      return ok(conflict(
+        locatorText,
+        existing.value.hash,
+        `task ^${taskId} が別の形か別の owner に既にある`,
+        taskId,
+      ));
+    }
+    return ok({
+      outcome: {
+        disposition: "noop",
+        component_id: taskId,
+        locator: locatorText,
+        observed_hash: placed.hash,
+      },
+    });
+  }
+  if (existing.error.code !== "document_not_found") return existing;
+  const target = listing.value.sections.find((section) => sameNode(section, destination.value));
+  if (target === undefined) {
+    return err("document_not_found", "置き先の section を解決できない", "locator");
+  }
+  const newline = detectNewline(raw);
+  const next = insertTaskText(
+    raw,
+    listing.value,
+    target,
+    `- [ ] ${title} ^${taskId}${newline}`,
+    newline,
+  );
+  const after = codec.listSections(next);
+  if (!after.ok) return after;
+  const placedBlock = locateTaskBlock(next, taskId);
+  if (
+    !placedBlock.ok || placedBlock.value.foreign !== undefined ||
+    ownerAt(after.value, placedBlock.value.span.start) === undefined ||
+    !sameNode(
+      ownerAt(after.value, placedBlock.value.span.start) as ListedSection,
+      destination.value,
+    ) ||
+    !sectionsKeptExcept(raw, listing.value, next, after.value, [destination.value])
+  ) {
+    return ok(unreadable(
+      taskId,
+      locatorText,
+      "task 行を置いた後の検算が合わない (anchor / 他の node の本文 / 所属のいずれかが崩れる)。書かない",
+    ));
+  }
+  return ok({
+    outcome: {
+      disposition: "applied",
+      component_id: taskId,
+      locator: locatorText,
+      observed_hash: placedBlock.value.hash,
     },
     next_raw: next,
   });

@@ -14,6 +14,7 @@ import { parseRelationType } from "../relations.ts";
 import type { WorkflowCapabilities } from "../capabilities.ts";
 import {
   checkCreateFilePath,
+  checkCreateTaskPath,
   type ChildLinkInput,
   type DocumentPort,
   type DocumentProjectionPort,
@@ -35,7 +36,7 @@ import {
   registerExistingVaultComponent,
   runLocalCommand,
 } from "../sql/transaction.ts";
-import { parseComponentKind } from "../components.ts";
+import { parseComponentKind, parseRevision } from "../components.ts";
 import { isVaultComponentId } from "../vault_ids.ts";
 import { checkChildEntries } from "./check_children.ts";
 import {
@@ -186,6 +187,10 @@ export const CLI_REQUEST_KINDS = [
   // iPhone write channel 向けの新規 file 作成 (component 採番 + Markdown 作成 +
   // COMPONENTS 登録 + initial projection を 1 request で)。
   "document.create_file",
+  // Lane I (wish w-01M3N7RV5K)。planner が plan 時に task の document node を
+  // mint/bind する口 — `task.start_doing` の anchor gate が要求する `path#^<task_id>`
+  // locator を、dispatch された task が必ず持つようにする。
+  "document.create_task",
   // iteration (schema 6)。write は `workflow.submit` の typed command が担う
   // (operation ledger に乗る)。ここにあるのは read と repair。repair は
   // `cutover.bind` と同じく DB へ直接書く CLI kind — replication Option A の裁定で
@@ -810,6 +815,210 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
         result: {
           ...created.value,
           register: registered.value.disposition,
+          projection: observed.value.disposition,
+        },
+      };
+    }
+
+    case "document.create_task": {
+      // Lane I (wish w-01M3N7RV5K): `task.start_doing` の anchor gate が要求する
+      // bound `^t-` locator を、planner が plan 時に 1 request で mint/bind する口。
+      // `component_id` 無し = mint 経路 (task.create_planned -> checkbox 行 write ->
+      // projection observe)、有り = bind-only 経路 (既存 Task への anchor 書き込み、
+      // WA2 backfill / 再送修復が使う)。
+      const operationId = parseOperationId(raw["operation_id"], "operation_id");
+      if (!operationId.ok) return failure(kind, operationId.error, CLI_EXIT_BAD_REQUEST);
+      const title = requireString(raw, "title");
+      if (!title.ok) return failure(kind, title.error, CLI_EXIT_BAD_REQUEST);
+      const locator = parseDocumentLocator(raw["locator"], "locator");
+      if (!locator.ok) return failure(kind, locator.error, CLI_EXIT_BAD_REQUEST);
+      // 置き先 file も scan / bind / audit の対象でなければならない。
+      const scopedPath = checkCreateTaskPath(locator.value.path, "locator");
+      if (!scopedPath.ok) return failure(kind, scopedPath.error, CLI_EXIT_BAD_REQUEST);
+      const scopedLocator = { ...locator.value, path: scopedPath.value };
+      let actorRef = "cli";
+      if (raw["actor_ref"] !== undefined) {
+        const parsed = requireString(raw, "actor_ref");
+        if (!parsed.ok) return failure(kind, parsed.error, CLI_EXIT_BAD_REQUEST);
+        actorRef = parsed.value;
+      }
+
+      let taskId: ComponentId;
+      let plannedDisposition: string | undefined;
+      if (raw["component_id"] !== undefined) {
+        // bind-only 経路。採番はしない — mint 用 field との混在も受けない。
+        if (
+          raw["wish_component_id"] !== undefined ||
+          raw["expected_revision"] !== undefined ||
+          raw["iteration_id"] !== undefined
+        ) {
+          return failure(kind, {
+            code: "invalid_field_type",
+            message: "component_id と mint 用 field (wish_component_id / " +
+              "expected_revision / iteration_id) は併用できない",
+            path: "component_id",
+          }, CLI_EXIT_BAD_REQUEST);
+        }
+        const parsed = parseComponentId(raw["component_id"], "component_id");
+        if (!parsed.ok) return failure(kind, parsed.error, CLI_EXIT_BAD_REQUEST);
+        const existing = ports.store.lookup(parsed.value);
+        if (existing === undefined) {
+          return failure(kind, {
+            code: "document_not_found",
+            message: `component ${parsed.value} が無い`,
+            path: "component_id",
+          }, CLI_EXIT_NOT_APPLIED);
+        }
+        if (existing.kind !== "task") {
+          return failure(kind, {
+            code: "invalid_field_type",
+            message: `component_id は Task でなければならない (kind=${existing.kind})`,
+            path: "component_id",
+          }, CLI_EXIT_BAD_REQUEST);
+        }
+        taskId = parsed.value;
+      } else {
+        // mint 経路。`task.create_planned` が採番と PLANNED_TASK relation を
+        // 1 transaction で確定する (component.register と同じく ledger で再送安全)。
+        const wishId = parseComponentId(raw["wish_component_id"], "wish_component_id");
+        if (!wishId.ok) return failure(kind, wishId.error, CLI_EXIT_BAD_REQUEST);
+        const expectedRevision = parseRevision(
+          raw["expected_revision"],
+          "expected_revision",
+        );
+        if (!expectedRevision.ok) {
+          return failure(kind, expectedRevision.error, CLI_EXIT_BAD_REQUEST);
+        }
+        const wish = ports.store.lookup(wishId.value);
+        if (wish === undefined) {
+          return failure(kind, {
+            code: "document_not_found",
+            message: `component ${wishId.value} が無い`,
+            path: "wish_component_id",
+          }, CLI_EXIT_NOT_APPLIED);
+        }
+        if (wish.kind !== "wish") {
+          return failure(kind, {
+            code: "invalid_field_type",
+            message: `wish_component_id は Wish でなければならない (kind=${wish.kind})`,
+            path: "wish_component_id",
+          }, CLI_EXIT_BAD_REQUEST);
+        }
+        const injectedAllocator = ports.allocate_component_id;
+        if (injectedAllocator === undefined) {
+          return failure(kind, {
+            code: "unsupported_feature",
+            message: "component_id allocator が無い環境では document.create_task の" +
+              " mint 経路は使えない (component_id を渡す bind-only 経路は使える)",
+            path: "component_id",
+          }, CLI_EXIT_BAD_REQUEST);
+        }
+        const allocator: ComponentIdAllocator = (command) => {
+          const allocated = injectedAllocator(command);
+          if (allocated.ok && !isVaultComponentId(allocated.value)) {
+            return err(
+              "invalid_id",
+              `採番された id が vault 形でない: ${allocated.value}`,
+              "component_id",
+            );
+          }
+          return allocated;
+        };
+        const payload: Record<string, unknown> = { title: title.value };
+        if (raw["iteration_id"] !== undefined) {
+          const iterationId = requireString(raw, "iteration_id");
+          if (!iterationId.ok) {
+            return failure(kind, iterationId.error, CLI_EXIT_BAD_REQUEST);
+          }
+          payload["iteration_id"] = iterationId.value;
+        }
+        if (raw["correlation_id"] !== undefined) {
+          const correlationId = requireString(raw, "correlation_id");
+          if (!correlationId.ok) {
+            return failure(kind, correlationId.error, CLI_EXIT_BAD_REQUEST);
+          }
+          payload["correlation_id"] = correlationId.value;
+        }
+        const planned = runLocalCommand(ports.store, {
+          protocol_version: WORKFLOW_PROTOCOL_VERSION,
+          repository_id: ports.store.context.repository_id,
+          operation_id: operationId.value,
+          operation: "task.create_planned",
+          target_id: wishId.value,
+          expected_revision: expectedRevision.value,
+          actor_ref: actorRef,
+          source_device_id: ports.store.context.device_id,
+          payload,
+        }, { allocate_component_id: allocator });
+        if (!planned.ok) {
+          return failure(kind, planned.error, CLI_EXIT_BAD_REQUEST);
+        }
+        plannedDisposition = planned.value.disposition;
+        const createdId = planned.value.created_ids[0]?.component_id;
+        if (createdId === undefined) {
+          // conflict / rejected (stale revision 等) は Task を作らないで止まる —
+          // command の disposition をそのまま返す。noop 再送は receipt が
+          // created_ids を保持した元の response を返すのでここには来ない。
+          if (plannedDisposition !== "applied" && plannedDisposition !== "noop") {
+            return {
+              kind,
+              ok: true,
+              exit_code: exitForDisposition(plannedDisposition),
+              result: { ...planned.value, create_planned: plannedDisposition },
+            };
+          }
+          return failure(kind, {
+            code: "unsupported_feature",
+            message: "task.create_planned が id を返さなかった",
+            path: "operation_id",
+          }, CLI_EXIT_NOT_APPLIED);
+        }
+        taskId = createdId;
+      }
+
+      const created = ports.document.createTask({
+        component_id: taskId,
+        title: title.value,
+        locator: scopedLocator,
+      });
+      if (!created.ok) return failure(kind, created.error, CLI_EXIT_NOT_APPLIED);
+      if (
+        created.value.disposition === "conflict" ||
+        created.value.disposition === "rejected"
+      ) {
+        return {
+          kind,
+          ok: true,
+          exit_code: exitForDisposition(created.value.disposition),
+          result: {
+            ...created.value,
+            ...(plannedDisposition === undefined ? {} : { create_planned: plannedDisposition }),
+          },
+        };
+      }
+      if (created.value.observed_hash === undefined) {
+        return failure(kind, {
+          code: "unsupported_feature",
+          message: "create_task が observed_hash を返さなかった",
+          path: "locator",
+        }, CLI_EXIT_NOT_APPLIED);
+      }
+      // outcome.locator は `path#^<task_id>` — anchor gate が引く bound locator そのもの。
+      const observed = ports.projection.observe({
+        component_id: taskId,
+        title: title.value,
+        locator: created.value.locator ??
+          `${scopedLocator.path}#^${taskId}`,
+        observed_hash: created.value.observed_hash,
+      });
+      if (!observed.ok) return failure(kind, observed.error, CLI_EXIT_NOT_APPLIED);
+      return {
+        kind,
+        ok: true,
+        exit_code: exitForDisposition(created.value.disposition),
+        result: {
+          ...created.value,
+          ...(plannedDisposition === undefined ? {} : { create_planned: plannedDisposition }),
           projection: observed.value.disposition,
         },
       };

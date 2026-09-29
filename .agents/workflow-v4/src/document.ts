@@ -112,20 +112,25 @@ export function checkRelativePath(value: string, path?: string): Result<string> 
 }
 
 /**
- * `document.create_file` が受け付ける path の検査。
+ * `document.create_file` / `document.create_task` が受け付ける path の検査 (kind 名は
+ * error message だけに使う)。
  *
- * 作る file は scan / bind / audit の対象でなければならない — **見えない場所に identity を
- * 書くと audit が追えない**。範囲は `fs_scan.ts` の走査対象と同じ: `.md` file で、
+ * identity を書く file は scan / bind / audit の対象でなければならない — **見えない場所に
+ * identity を書くと audit が追えない**。範囲は `fs_scan.ts` の走査対象と同じ: `.md` file で、
  * `.` で始まる segment と `node_modules` を含まない。`checkRelativePath` の root escape /
  * NUL / 絶対 path 検査の上に載せる。symlink 越えは adapter 側が見る。
  */
-export function checkCreateFilePath(value: string, path?: string): Result<string> {
+function checkScannableMarkdownPath(
+  value: string,
+  kind: string,
+  path?: string,
+): Result<string> {
   const checked = checkRelativePath(value, path);
   if (!checked.ok) return checked;
   if (!value.toLowerCase().endsWith(".md")) {
     return err(
       "invalid_locator",
-      `create_file の対象は .md file のみ: ${value}`,
+      `${kind} の対象は .md file のみ: ${value}`,
       path,
     );
   }
@@ -146,6 +151,15 @@ export function checkCreateFilePath(value: string, path?: string): Result<string
     }
   }
   return checked;
+}
+
+export function checkCreateFilePath(value: string, path?: string): Result<string> {
+  return checkScannableMarkdownPath(value, "create_file", path);
+}
+
+/** `document.create_task` の置き先 file の検査。task 行も scan / audit の対象。 */
+export function checkCreateTaskPath(value: string, path?: string): Result<string> {
+  return checkScannableMarkdownPath(value, "create_task", path);
 }
 
 /**
@@ -462,6 +476,21 @@ export type MoveTaskInput = {
   readonly new_parent_component_id: ComponentId;
 };
 
+/**
+ * task node の作成 (Lane I、wish `w-01M3N7RV5K`)。`task.create_planned` が採番した
+ * `^t-...` anchor を、checkbox 行 (`- [ ] <title> ^<component_id>`) として `locator` の
+ * section へ書く口。planner が plan 時に task の document node を mint/bind する経路。
+ * ID は引数として受ける (発番点を 1 つに集約する規則 — `register_component_id` と同じ)。
+ */
+export type CreateTaskInput = {
+  /** 書く task の component_id。`task.create_planned` が返した vault 形。 */
+  readonly component_id: ComponentId;
+  /** checkbox 行の表示 text。行末 `^<id>` はこちらが付ける — title に `^` を含めない。 */
+  readonly title: string;
+  /** 置き先の section (file root node か heading node)。通常は owner wish の node。 */
+  readonly locator: DocumentLocator;
+};
+
 /** task の locator。`path#^<task_id>` だけを受ける。**heading 形や bare path から推測しない。** */
 export function parseTaskLocator(
   value: string,
@@ -514,6 +543,13 @@ export interface DocumentPort {
    * **file 跨ぎは移動先へ書いてから移動元から外す。**途中で落ちたら task は両方に残り、消えない。
    */
   moveTask(input: MoveTaskInput): Result<DocumentOutcome>;
+  /**
+   * task node を新規に置く。`- [ ] <title> ^<component_id>` の checkbox 行を `locator` の
+   * section の自分の本文の末尾へ足す。同じ `component_id` の task 行が同じ owner に
+   * 正しく在れば `noop` (再送)、別の形 / 別の owner に在れば `conflict`。
+   * **既存行は書き直さない。**
+   */
+  createTask(input: CreateTaskInput): Result<DocumentOutcome>;
   /**
    * generated iteration 3 key を `path` の file へ surgical に upsert する (schema 6)。
    *
