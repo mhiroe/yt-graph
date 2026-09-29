@@ -36,6 +36,9 @@ iteration_created: 2026-09-27T12:49:44.864Z
 ## 設計 baseline (chappy consult 2026-09-27)
 
 Consult record: `.agent-state/chappy-discovery-consult-2026-09-27.md`
+Consult record (2026-09-29, discovery strategy 拡張):
+`.agent-state/chappy-consult-2026-09-29-discovery.md` — 詳細は
+`docs/spec_product.md` "discovery strategy" を正本とする。
 (verbatim response: `-full.md`; chappy note:
 `docs/chatgpt/YouTube Discovery Pipeline.md`).
 
@@ -64,6 +67,15 @@ Consult record: `.agent-state/chappy-discovery-consult-2026-09-27.md`
 - 後送り: comments/audience overlap、Graph DB、multi-user、
   yt-client / ContentHub playback 連携 (別 repo 依存、API 契約は
   contenthub_pm と調整)
+- 追加 direction (user 2026-09-29): x-graph 同様の調査画面 (inspection
+  UI) と adhoc mode (人間起点の one-shot 探索/評価)。詳細は
+  `docs/spec_product.md` scope / 制約。
+- 制約 (user 2026-09-29): 機械アクセス判定に注意。自動巡回は本人
+  account を汚損するため、ログインは**専用 account** で行う。
+  ContentHub adapter 依頼へ addendum 済み。
+- 補足 (user 2026-09-29): 自分の好み (Curiosity Profile) の実データは
+  dokoitsu が蓄積する想定 (dokoitsu 側は未実装)。yt-graph は profile
+  source を adapter seam として用意し、dokoitsu への pipe を意識する。
 
 ## task 分解 (planner 2026-09-28 — 夜間 PoC run 用に再分解)
 
@@ -83,6 +95,10 @@ pipeline と UI を通す。
 - [ ] discovery pipeline: seed fingerprint → search / subscriptions / playlists
       expansion → candidate merge with provenance → deterministic cleanup
   - fixture adapter で 1 seed → candidate 群が provenance 付きで DB に入る
+  - discovery の方向は 2026-09-29 consult で拡張 (spec_product.md
+    "discovery strategy"): relation-edge walk と subscription-gap
+    collaborative filtering、段階評価 (Channel Activity DNA)。PoC の
+    fixture 範囲は変えず、expansion source の設計余地として記録。
 - [ ] jev judgment adapter: 初期 criteria relevance / novelty / signal density /
       distinctiveness (user 確定 2026-09-28) で score / filter
 - [ ] chappy consult adapter: ChatGPT で candidate 生成 (wall-bounce)
@@ -90,6 +106,9 @@ pipeline と UI を通す。
     adapter は skip して他 source で続行 (夜間 run を止めない)
 - [ ] graph UI + preview-and-route UX (accept / reject / later 永続化) +
       accept node からの再展開
+  - UI 系は x-graph 同様の調査画面 (inspection) と adhoc 操作の土台に
+    なるよう意識する (user 指示 2026-09-29; PoC では preview/route が
+    先行、調査画面・adhoc mode の詳細は spec_product.md scope 参照)
 - [ ] acceptance (fixture): 1 seed → candidates → jev → preview → route →
       expand が 1 周動く
 - [ ] user subscriptions signal (ContentHub session 経由) — **夜間対象外**:
