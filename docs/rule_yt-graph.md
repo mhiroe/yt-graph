@@ -86,6 +86,17 @@ constitution: none (repo autonomy)
   要求する実装を pipeline 側に直接書かない (2026-09-29, t-01M3NXG5G2)。
   - `mySubscriptions()` は optional — session を持つ adapter のみが実装する。
 
+### discovery funnel boundary
+
+scope: discovery
+constitution: none (repo autonomy)
+
+- pipeline の deterministic cleanup 段では score を付けない。
+  落とすのは seed 自身 / 重複 / 既に human reject 済み / provenance 無し
+  のみ (2026-09-29, t-01M3NXG93D)。面白さの判定は jev 段以降の仕事。
+- search 系 expansion は 1 pass あたり最大 2 query に抑える
+  (quota law に連動)。
+
 ### local store
 
 scope: 全域

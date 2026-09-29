@@ -4,13 +4,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const dbPath = process.env.YTG_DB ?? join(here, "..", "data", "yt-graph.sqlite");
+const defaultPath = join(here, "..", "data", "yt-graph.sqlite");
 const schemaPath = join(here, "schema.sql");
 
-mkdirSync(dirname(dbPath), { recursive: true });
+export function openDb(dbPath = process.env.YTG_DB ?? defaultPath): DatabaseSync {
+  if (dbPath !== ":memory:") mkdirSync(dirname(dbPath), { recursive: true });
+  const handle = new DatabaseSync(dbPath);
+  handle.exec(readFileSync(schemaPath, "utf8"));
+  return handle;
+}
 
-export const db = new DatabaseSync(dbPath);
-db.exec(readFileSync(schemaPath, "utf8"));
+export const db = openDb();
 
 export type ChannelRow = {
   id: string;
@@ -31,10 +35,10 @@ export type EdgeRow = {
   created_at: string;
 };
 
-export function listChannels(): ChannelRow[] {
-  return db.prepare("select * from channel order by first_seen_at").all() as unknown as ChannelRow[];
+export function listChannels(handle: DatabaseSync = db): ChannelRow[] {
+  return handle.prepare("select * from channel order by first_seen_at").all() as unknown as ChannelRow[];
 }
 
-export function listEdges(): EdgeRow[] {
-  return db.prepare("select * from edge order by id").all() as unknown as EdgeRow[];
+export function listEdges(handle: DatabaseSync = db): EdgeRow[] {
+  return handle.prepare("select * from edge order by id").all() as unknown as EdgeRow[];
 }

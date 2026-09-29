@@ -99,7 +99,7 @@ pipeline と UI を通す。
     2026-09-28)。ContentHub 側 adapter は contenthub_pm に依頼済み; 届いたら
     ContentHub 実装を差し込む。API-key adapter は不採用 (理由:
     `.agent-state/decision-2026-09-28-readiness.md`)
-- [ ] discovery pipeline: seed fingerprint → search / subscriptions / playlists ^t-01M3NXG93D
+- [done] discovery pipeline: seed fingerprint → search / subscriptions / playlists ^t-01M3NXG93D
       expansion → candidate merge with provenance → deterministic cleanup
   - fixture adapter で 1 seed → candidate 群が provenance 付きで DB に入る
   - discovery の方向は 2026-09-29 consult で拡張 (spec_product.md
