@@ -1,0 +1,62 @@
+{
+  "channels": [
+    { "id": "FIXSEED001", "title": "Curious Kitchen Lab", "handle": "@curiouskitchenlab", "description": "Science experiments you can do in a kitchen: fermentation, heat, pressure.", "subscriberCount": 820000, "videoCount": 210 },
+    { "id": "FIXSUB01", "title": "Deep Field Astronomy", "handle": "@deepfield", "description": "Telescope builds and deep-sky observing logs.", "subscriberCount": 310000, "videoCount": 140 },
+    { "id": "FIXSUB02", "title": "Metalshop Diaries", "handle": "@metalshopdiaries", "description": "Machining, welding, and shop-built tools.", "subscriberCount": 540000, "videoCount": 180 },
+    { "id": "FIXPL01", "title": "Quiet Woodworking", "handle": "@quietwoodworking", "description": "Hand-tool joinery, no narration.", "subscriberCount": 1200000, "videoCount": 95 },
+    { "id": "FIXPL02", "title": "Orbital Mechanics 101", "handle": "@orbital101", "description": "Kerbal-free orbital mechanics with pencil and paper.", "subscriberCount": 90000, "videoCount": 60 },
+    { "id": "FIXPL03", "title": "Fermentation Station", "handle": "@fermentationstation", "description": "Miso, koji, natto — fermentation science at home.", "subscriberCount": 210000, "videoCount": 120 },
+    { "id": "FIXS01", "title": "Kitchen Physics", "handle": "@kitchenphysics", "description": "Physics demos with household items.", "subscriberCount": 460000, "videoCount": 150 },
+    { "id": "FIXS02", "title": "Everyday Chemistry", "handle": "@everydaychem", "description": "Safe chemistry experiments and explanations.", "subscriberCount": 780000, "videoCount": 200 },
+    { "id": "FIXS03", "title": "Sound Workshop", "handle": "@soundworkshop", "description": "Build and restore synths and studio gear.", "subscriberCount": 150000, "videoCount": 85 },
+    { "id": "FIXN01", "title": "Daily Vlog Central", "handle": "@dailyvlogcentral", "description": "Daily lifestyle vlogs.", "subscriberCount": 2300000, "videoCount": 1200 },
+    { "id": "FIXN02", "title": "Crypto Hype Daily", "handle": "@cryptohype", "description": "Market commentary and coin picks.", "subscriberCount": 410000, "videoCount": 600 },
+    { "id": "FIXG01", "title": "Glassblowing Basics", "handle": "@glassbasics", "description": "Lampworking and furnace glass for beginners.", "subscriberCount": 67000, "videoCount": 45 }
+  ],
+  "uploads": {
+    "FIXSEED001": [
+      { "id": "V001", "channelId": "FIXSEED001", "title": "Why bread rises: yeast physics in the kitchen", "publishedAt": "2026-08-01" },
+      { "id": "V002", "channelId": "FIXSEED001", "title": "Kitchen vacuum chamber: marshmallow expansion", "publishedAt": "2026-08-08" },
+      { "id": "V003", "channelId": "FIXSEED001", "title": "Fermenting miso at home — koji science", "publishedAt": "2026-08-15" },
+      { "id": "V004", "channelId": "FIXSEED001", "title": "Caramelization vs Maillard: a kitchen chemistry test", "publishedAt": "2026-08-22" },
+      { "id": "V005", "channelId": "FIXSEED001", "title": "DIY cloud chamber on the countertop", "publishedAt": "2026-08-29" }
+    ],
+    "FIXPL03": [
+      { "id": "V301", "channelId": "FIXPL03", "title": "Koji in 48 hours", "publishedAt": "2026-07-10" },
+      { "id": "V302", "channelId": "FIXPL03", "title": "Natto without a starter", "publishedAt": "2026-07-17" }
+    ]
+  },
+  "subscriptions": {
+    "FIXSEED001": ["FIXSUB01", "FIXSUB02", "FIXPL03"],
+    "FIXSUB01": ["FIXPL02"],
+    "FIXPL03": ["FIXG01"]
+  },
+  "playlists": [
+    { "id": "PL1", "channelId": "FIXSEED001", "title": "Channels I keep coming back to", "itemCount": 4 },
+    { "id": "PL2", "channelId": "FIXSEED001", "title": "Kitchen science collabs", "itemCount": 3 }
+  ],
+  "playlistItems": {
+    "PL1": [
+      { "id": "V101", "channelId": "FIXPL01", "title": "Dovetails with hand tools only", "publishedAt": "2026-06-01" },
+      { "id": "V102", "channelId": "FIXPL02", "title": "Why orbits are ellipses", "publishedAt": "2026-06-05" },
+      { "id": "V103", "channelId": "FIXPL03", "title": "Koji in 48 hours", "publishedAt": "2026-07-10" },
+      { "id": "V104", "channelId": "FIXN01", "title": "A week in my life", "publishedAt": "2026-06-12" }
+    ],
+    "PL2": [
+      { "id": "V201", "channelId": "FIXS01", "title": "Collab: kitchen vacuum chamber", "publishedAt": "2026-07-01" },
+      { "id": "V202", "channelId": "FIXS02", "title": "Collab: sugar chemistry", "publishedAt": "2026-07-03" },
+      { "id": "V203", "channelId": "FIXSEED001", "title": "Host channel entry (self)", "publishedAt": "2026-07-05" }
+    ]
+  },
+  "searchIndex": {
+    "kitchen": ["FIXS01", "FIXS02", "FIXSEED001", "FIXN01"],
+    "science": ["FIXS01", "FIXS02", "FIXPL02"],
+    "fermentation": ["FIXPL03", "FIXSEED001"],
+    "physics": ["FIXS01", "FIXPL02"],
+    "vacuum": ["FIXSEED001", "FIXS01"],
+    "diy": ["FIXSUB02", "FIXS03", "FIXSEED001"],
+    "vlog": ["FIXN01"],
+    "crypto": ["FIXN02"],
+    "glass": ["FIXG01"]
+  }
+}

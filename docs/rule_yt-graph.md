@@ -76,6 +76,16 @@ constitution: none (repo autonomy)
   - expansion の主経路は `playlistItems.list` / `channels.list` /
     `subscriptions.list` (shared 10k-unit bucket) とする。
 
+### source adapter seam
+
+scope: adapters
+constitution: none (repo autonomy)
+
+- YouTube 取得は `server/sources/` の `SourceAdapter` interface 越しのみ。
+  選択は `YTG_SOURCE` env (`fixture` 既定 / `contenthub`)。認証情報を
+  要求する実装を pipeline 側に直接書かない (2026-09-29, t-01M3NXG5G2)。
+  - `mySubscriptions()` は optional — session を持つ adapter のみが実装する。
+
 ### local store
 
 scope: 全域

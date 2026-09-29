@@ -94,7 +94,7 @@ pipeline と UI を通す。
       SQLite provenance-first schema (channel / edge / discovery_evidence /
       channel_snapshot / judgment / human_decision)
   - smoke: `pnpm install` → `pnpm dev` で UI + API 起動、README 同一 diff
-- [ ] YouTube source adapter: interface + fixture adapter (credential 不要) ^t-01M3NXG5G2
+- [done] YouTube source adapter: interface + fixture adapter (credential 不要) ^t-01M3NXG5G2
   - data source は ContentHub のログイン済みセッション経由 (x-graph 方式、user 確定
     2026-09-28)。ContentHub 側 adapter は contenthub_pm に依頼済み; 届いたら
     ContentHub 実装を差し込む。API-key adapter は不採用 (理由:
