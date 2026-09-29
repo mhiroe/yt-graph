@@ -58,12 +58,18 @@ tags:
 - 後送り:
   - multi-user 対応、Graph DB、embedding similarity、高度な推薦 model
   - YouTube 以外 source との統合
-  - 再生 viewer yt-client + ContentHub webview host 対応
-    (別 repo; contenthub_pm と API 契約を調整してから組み込む)
+  - 再生: 専用 YouTube 再生 client を別途作る方針 (user 2026-09-29)。
+    yt-graph が収集・採用した channel を観るための viewer で、
+    **子供の視聴にも使う**想定 → 表示対象は採用済み channel に限定する
+    curated surface。yt-client / ContentHub webview host との関係は
+    別 repo 側で詰める (contenthub_pm と API 契約を調整してから組み込む)
 
 ## users and usage
 
 - 想定ユーザー: 個人 (自分)。自分の YouTube account で OAuth login して使う。
+  - 副次的利用: 再生は専用 client 経由で**子供も使う**想定
+    (user 2026-09-29) — 再生面は採用済み channel に限る curated
+    surface であることが前提。
 - 典型 flow: OAuth auth → seed channel 選択 → candidate 生成 → jev filter →
   graph 表示 → node 選択で channel preview → 採用 / 除外 route。
 - AI の score は最終判断に使わない。preview を見て人間が route する。

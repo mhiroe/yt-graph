@@ -67,6 +67,9 @@ Consult record (2026-09-29, discovery strategy 拡張):
 - 後送り: comments/audience overlap、Graph DB、multi-user、
   yt-client / ContentHub playback 連携 (別 repo 依存、API 契約は
   contenthub_pm と調整)
+- 再生の方向 (user 2026-09-29): 専用 YouTube 再生 client を別途作り、
+  yt-graph の収集・採用 channel を観る。子供も視聴に使うため、
+  再生面は採用済みに限る curated surface (詳細は spec_product.md)。
 - 追加 direction (user 2026-09-29): x-graph 同様の調査画面 (inspection
   UI) と adhoc mode (人間起点の one-shot 探索/評価)。詳細は
   `docs/spec_product.md` scope / 制約。
