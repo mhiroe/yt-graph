@@ -65,18 +65,37 @@ Consult record: `.agent-state/chappy-discovery-consult-2026-09-27.md`
   yt-client / ContentHub playback 連携 (別 repo 依存、API 契約は
   contenthub_pm と調整)
 
-## task 分解 (planner draft — readiness 判断と共に提示)
+## task 分解 (planner 2026-09-28 — 夜間 PoC run 用に再分解)
 
-- [ ] app skeleton: pnpm + Vite + React + TS + local API + SQLite schema
-- [ ] YouTube OAuth + API client adapter (`youtube.readonly`; API key
-      fallback for public surfaces; quota-aware)
-- [ ] discovery pipeline: seed fingerprint → search/subscriptions/
-      playlists expansion → candidate merge with provenance
-- [ ] chappy-cli consult adapter (candidate generation, wall-bounce)
-- [ ] jev judgment adapter (interestingness criteria, score/filter)
-- [ ] graph UI + preview-and-route UX + judgement persistence
-- [ ] acceptance: 1 seed → candidates → preview → route → expand が
-      1 周動くこと
+夜間 run (2026-09-29 01:00 JST 頃開始) は user credential 無しで進む順に並べる。
+YouTube 取得は adapter の背後に置き、credential が無い間は fixture adapter で
+pipeline と UI を通す。
+
+- [ ] app skeleton: pnpm + Vite + React + TS + Three.js 3D graph + local API +
+      SQLite provenance-first schema (channel / edge / discovery_evidence /
+      channel_snapshot / judgment / human_decision)
+  - smoke: `pnpm install` → `pnpm dev` で UI + API 起動、README 同一 diff
+- [ ] YouTube source adapter: interface + fixture adapter (credential 不要)
+  - data source は ContentHub のログイン済みセッション経由 (x-graph 方式、user 確定
+    2026-09-28)。ContentHub 側 adapter は contenthub_pm に依頼済み; 届いたら
+    ContentHub 実装を差し込む。API-key adapter は不採用 (理由:
+    `.agent-state/decision-2026-09-28-readiness.md`)
+- [ ] discovery pipeline: seed fingerprint → search / subscriptions / playlists
+      expansion → candidate merge with provenance → deterministic cleanup
+  - fixture adapter で 1 seed → candidate 群が provenance 付きで DB に入る
+- [ ] jev judgment adapter: 初期 criteria relevance / novelty / signal density /
+      distinctiveness (user 確定 2026-09-28) で score / filter
+- [ ] chappy consult adapter: ChatGPT で candidate 生成 (wall-bounce)
+  - 前提: ContentHub 起動 + chappy main slot の ChatGPT login。未 login なら
+    adapter は skip して他 source で続行 (夜間 run を止めない)
+- [ ] graph UI + preview-and-route UX (accept / reject / later 永続化) +
+      accept node からの再展開
+- [ ] acceptance (fixture): 1 seed → candidates → jev → preview → route →
+      expand が 1 周動く
+- [ ] user subscriptions signal (ContentHub session 経由) — **夜間対象外**:
+      ContentHub 側 adapter の到着待ち
+  - 旧案 YouTube OAuth (`youtube.readonly`) は 2026-09-28 に不採用 (ContentHub
+    session 経路へ切替; 理由は `.agent-state/decision-2026-09-28-readiness.md`)
 
 ## 受け入れ条件
 
@@ -89,14 +108,14 @@ Consult record: `.agent-state/chappy-discovery-consult-2026-09-27.md`
 
 ## 判断が要る点 (user / doit 中)
 
-- tech stack 仮置きの確定 (TS / React+Three.js+Vite / pnpm /
-  smoke / ddd none / worktree off — x-graph 準拠)。
+- tech stack: user 確定 2026-09-28 (TS / React+Three.js+Vite / pnpm /
+  smoke / ddd none / worktree off)。
 - Google Cloud project / OAuth client の用意 (user 側の credential)。
 - `search.list` quota: 検証済み 2026-09-28 (`.agent-state/verification-2026-09-28.md`)。
   現行ルールは 1 unit/call・専用 "Search Queries" bucket で default
   ~100 calls/day。search 拡張は seed-fingerprint query に絞り、
   playlistItems/channels/subscriptions (shared 10k bucket) を主経路にする。
-- interestingness の criteria 具体定義 (jev への渡し方)。
-- graph は 3D (Three.js) か 2D か — x-graph 準拠なら 3D。
+- interestingness の初期 criteria は user 確定 2026-09-28 (4 基準)。jev への渡し方は jev adapter task で決める。
+- graph は 3D (Three.js): user 確定 2026-09-28。
 - preview の中身 (channel metadata + 代表動画; yt-client embed は
   ContentHub 対応待ち)。
