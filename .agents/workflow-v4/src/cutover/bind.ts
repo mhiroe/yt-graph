@@ -15,12 +15,22 @@ import { locateChildren } from "../children.ts";
 import { parseCommand } from "../commands.ts";
 import type { TaskStatus } from "../components.ts";
 import { isTerminalTaskStatus } from "../transitions.ts";
-import type { DocumentProjectionObservation, DocumentProjectionPort } from "../document.ts";
+import type {
+  DocumentProjectionObservation,
+  DocumentProjectionPort,
+  DocumentProjectionResult,
+} from "../document.ts";
+import { err, ok, type Result } from "../result.ts";
 import { type ComponentId, parseComponentId, parseOperationId } from "../ids.ts";
 import { formatProtocolVersion, WORKFLOW_PROTOCOL_VERSION } from "../protocol.ts";
 import { registerExistingVaultComponent, runLocalCommand } from "../sql/transaction.ts";
 import type { SqliteWorkflowStore } from "../sql/store.ts";
-import { anchorIntent, type ScannedAnchor, type ScanResult } from "./scan.ts";
+import {
+  anchorIntent,
+  type ScannedAnchor,
+  type ScannedAnchorNode,
+  type ScanResult,
+} from "./scan.ts";
 
 /** anchor 1 件に対する、失敗でない報告。 */
 export type BindFinding = {
@@ -247,6 +257,30 @@ function mindChildren(
 }
 
 /**
+ * anchor 1 件から document projection の観測を組み立てる。
+ *
+ * **bind (initial projection) と rebind (component 単位の再観測) が同じ導出を使う。**
+ * ここを 2 系統に分けると、audit の scan 導出と projection の値が食い違う系を作る。
+ * body_hash の取れない anchor (block / 解決不能な task block) は undefined を返す —
+ * 空の観測を流すと「読めていない」が「空の本文」の記録と区別できなくなる。
+ */
+export function observationForAnchor(
+  scan: ScanResult,
+  anchor: ScannedAnchor,
+  componentId: ComponentId,
+): DocumentProjectionObservation | undefined {
+  if (anchor.body_hash === undefined) return undefined;
+  const children = mindChildren(scan, anchor);
+  return {
+    component_id: componentId,
+    title: anchor.title ?? "",
+    locator: anchor.locator,
+    observed_hash: anchor.body_hash,
+    ...(children === undefined ? {} : { children }),
+  };
+}
+
+/**
  * scan 結果を COMPONENTS へ結び、initial projection を流す。
  *
  * **失敗で throw しない。** 悪い anchor は `findings` / `errors` に畳んで続ける。
@@ -377,21 +411,14 @@ export function bindAnchors(
     // initial projection (Phase F step 7 の後半)。body_hash が取れない anchor
     // (解決不能な task block、block anchor) を空 hash で観測しない — 空の観測を流すと
     // 「読めていない」が「空の本文」の記録と区別できなくなる。
-    if (anchor.body_hash === undefined) {
+    const observation = observationForAnchor(scan, anchor, componentId.value);
+    if (observation === undefined) {
       findings.push({
         id: anchor.id,
         category: "projection_skipped",
         detail: `${anchor.locator} の body_hash が取れないため observe を送らない`,
       });
     } else {
-      const children = mindChildren(scan, anchor);
-      const observation: DocumentProjectionObservation = {
-        component_id: componentId.value,
-        title: anchor.title ?? "",
-        locator: anchor.locator,
-        observed_hash: anchor.body_hash,
-        ...(children === undefined ? {} : { children }),
-      };
       const result = projection.observe(observation);
       if (!result.ok) {
         errors.push({ id: anchor.id, code: result.error.code, message: result.error.message });
@@ -419,4 +446,75 @@ export function bindAnchors(
     findings,
     errors,
   };
+}
+
+/**
+ * `document_projection.rebind` の結果 — observe の結果に、観測を導出した anchor の
+ * locator / node 分類を添える (呼び出し側が書き換わった位置をそのまま確認できる)。
+ */
+export type RebindResult = DocumentProjectionResult & {
+  readonly locator: string;
+  readonly node: ScannedAnchorNode;
+};
+
+/**
+ * component 1 件の document projection を anchor 由来の観測で書き直す。
+ *
+ * **`document_projection.observe` は caller の組み立てた locator / title / hash をそのまま
+ * 信じる。** 手で観測を組み立てると (title から推測した heading fragment、別 node の
+ * section、捨てた fragment 等)、projection は audit の scan 導出と永遠に食い違い
+ * `workflow.drift` が収束しない。ここでは観測を scan から導出するので、書いた値は
+ * audit が必ず肯定する位置であり、caller の推測が入り込む余地が無い。
+ *
+ * 失敗の分類 (推測 merge しない — bind と同じ不変条件):
+ *
+ * - anchor が無い → `document_not_found`
+ * - 2 か所にある → `ambiguous_locator` (両方を勝手に選ばない)
+ * - どの node の identity にも属さない (unclaimed) → `document_region_not_in_markdown`
+ * - projectable な node を持たない (block anchor / 解決不能な task block) →
+ *   `document_region_not_in_markdown`
+ * - COMPONENTS に未登録 → observe の `not_found` をそのまま返す (rebind は登録しない)
+ */
+export function rebindComponent(
+  projection: DocumentProjectionPort,
+  scan: ScanResult,
+  componentId: ComponentId,
+): Result<RebindResult> {
+  const anchors = scan.by_id.get(componentId) ?? [];
+  if (anchors.length === 0) {
+    return err(
+      "document_not_found",
+      `anchor ^${componentId} が走査した Markdown に無い`,
+      "component_id",
+    );
+  }
+  if (anchors.length > 1) {
+    return err(
+      "ambiguous_locator",
+      `^${componentId} が ${anchors.length} か所にある ` +
+        `(${anchors.map((anchor) => anchor.locator).join(", ")})。推測で 1 つに寄せない`,
+      "component_id",
+    );
+  }
+  const anchor = anchors[0] as ScannedAnchor;
+  if (anchor.node === "unclaimed") {
+    return err(
+      "document_region_not_in_markdown",
+      `${anchor.path} の standalone anchor ^${componentId} はどの node の identity にも ` +
+        `属さない。meta callout と anchor を node の中へ移してから rebind する`,
+      "component_id",
+    );
+  }
+  const observation = observationForAnchor(scan, anchor, componentId);
+  if (observation === undefined) {
+    return err(
+      "document_region_not_in_markdown",
+      `^${componentId} は ${anchor.node} anchor (${anchor.locator}) で projectable な ` +
+        `document node を持たない (identity-only)`,
+      "component_id",
+    );
+  }
+  const observed = projection.observe(observation);
+  if (!observed.ok) return observed;
+  return ok({ ...observed.value, locator: anchor.locator, node: anchor.node });
 }

@@ -5,7 +5,8 @@
 # usage:
 #   wf4.sh provision <repository-id>   write .workflow/repository.json and create the
 #                                      device-local DB under .workflow.nosync/
-#   wf4.sh '<request-json>'            run a skill.phase / wish.complete request via
+#   wf4.sh '<request-json>'            run a skill.phase / wish.complete /
+#                                      wish.transition request via
 #                                      src/harness/skill_entry.ts (adds --allow-run)
 #   wf4.sh cli '<request-json>'        run a raw src/cli/main.ts request (read ops etc.)
 #

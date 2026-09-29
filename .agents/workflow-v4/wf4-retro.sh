@@ -11,6 +11,18 @@
 # went-well / wasted / change report. With --write it also appends the same
 # report to .workflow.nosync/retro/journal/<date>/<ts>-<id>.md — the journal
 # file carries the full report so the aggregate pass can read it standalone.
+# --write only lands a journal for a terminal task (done / dropped): a journal
+# on a task still doing is a snapshot of an unfinished run, not a retro.
+# --write is idempotent per task x state_revision: a re-run for the same
+# state reports the existing journal instead of writing a duplicate.
+#
+# Residue subtracts structural noise before flagging, so the flag means task
+# dirt: task-own paths (files touched in the change window + the marker doc —
+# still uncommitted because retro runs pre-commit) and grep -E exclusions,
+# one pattern per line ('#' comments allowed), read from
+#   .workflow/retro-residue.exclude         — repo-shared (e.g. a vault tree)
+#   .workflow.nosync/retro/residue.exclude  — device-local standing WIP
+#   WF4_RETRO_RESIDUE_EXCLUDE               — one extra pattern
 #
 # Opt-in only: nothing calls this automatically; the done skill runs it when
 # `wf4-retro.sh --enabled` succeeds (WF4_RETRO=1 or "retrospective": true in
@@ -182,18 +194,150 @@ if [ -n "$marker_line" ]; then
   [ -n "$marker_state" ] || marker_state="no-checkbox"
 fi
 
+# off-line anchor fallback: `^id` が node 行に無い時、行末 anchor を含む node
+# block を indent で辿り、その node の checkbox を parity に読む。codec はこの
+# 形を block anchor (identity_only) と見る — 正しい置き場は node 行末なので、
+# 解決できても placement defect として friction 側へ残す。
+anchor_off=""
+if [ -z "$marker_file" ]; then
+  anchor_re="[[:space:]]\^$task_id[[:space:]]*\$"
+  anchor_files=$(
+    {
+      if [ -n "$locator_file" ] && [ -f "$root/$locator_file" ]; then
+        printf '%s\n' "$locator_file"
+      fi
+      git -C "$root" grep -lE "$anchor_re" \
+        -- '*.md' '*.ts' '*.tsx' '*.js' '*.jsx' '*.swift' '*.py' '*.rs' '*.go' \
+        '*.c' '*.cc' '*.cpp' '*.h' '*.hpp' '*.m' '*.mm' '*.java' '*.kt' '*.rb' \
+        '*.sh' '*.css' '*.scss' '*.vue' '*.svelte' 2>/dev/null || true
+      if [ -d "$root/docs" ]; then
+        (cd "$root" && grep -rlE "$anchor_re" docs 2>/dev/null) || true
+      fi
+    } | awk 'NF && !seen[$0]++'
+  )
+  if [ -n "$anchor_files" ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      hit=$(python3 - "$root/$f" "$task_id" <<'PY_RESOLVER'
+import re, sys
+path, tid = sys.argv[1], sys.argv[2]
+anchor_re = re.compile(r"[ \t]\^" + re.escape(tid) + r"[ \t]*$")
+task_re = re.compile(r"^[ \t]*(?:<!--|//|/\*|#|\*|--)?[ \t]*- \[([^\]]*)\]")
+fence_re = re.compile(r"^[ \t]{0,3}(" + chr(96) + r"{3,}|~{3,})")
+try:
+    lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
+except OSError:
+    sys.exit(0)
+indents, tasks, anchors = [], {}, []
+in_fm = False
+fence = None
+for i, text in enumerate(lines):
+    s = text.lstrip(" \t")
+    indents.append(len(text) - len(s))
+    if i == 0 and s == "---":
+        in_fm = True
+        continue
+    if in_fm:
+        if s == "---":
+            in_fm = False
+        continue
+    m = fence_re.match(text)
+    if m is not None:
+        marker = m.group(1)
+        rest = s[len(marker):]
+        if fence is None:
+            # backtick fence の info string は backtick を含められない (CommonMark)。
+            # chr(96) = ` — この python は $( ) 内 heredoc なので literal backtick は書けない。
+            if marker[0] == "~" or chr(96) not in rest:
+                fence = (marker[0], len(marker))
+                continue
+        elif marker[0] == fence[0] and len(marker) >= fence[1] and rest.strip() == "":
+            fence = None
+            continue
+    if fence is not None:
+        continue
+    tm = task_re.match(text)
+    if tm is not None:
+        tasks[i] = tm.group(1)
+    if anchor_re.search(text):
+        anchors.append(i)
+for a in anchors:
+    if a in tasks:
+        print("%d\t%d\t%s" % (a + 1, a + 1, tasks[a]))
+        sys.exit(0)
+    cur = indents[a]
+    for j in range(a - 1, -1, -1):
+        if not lines[j].strip() or indents[j] >= cur:
+            continue
+        if j in tasks:
+            print("%d\t%d\t%s" % (a + 1, j + 1, tasks[j]))
+            sys.exit(0)
+        cur = indents[j]
+sys.exit(0)
+PY_RESOLVER
+) || true
+      if [ -n "$hit" ]; then
+        a_line=${hit%%$'\t'*}; rest=${hit#*$'\t'}
+        n_line=${rest%%$'\t'*}; marker_state=${rest#*$'\t'}
+        marker_file="$f"
+        [ "$a_line" != "$n_line" ] && anchor_off="$f:$a_line"
+        break
+      fi
+    done <<EOF_ANCHOR_FILES
+$anchor_files
+EOF_ANCHOR_FILES
+  fi
+fi
+
 # --- change window + residue ------------------------------------------------
-n_commits=0; files_touched=0
+n_commits=0; files_touched=0; window_files=""
 if [ -n "$completed_at" ]; then
   n_commits=$(git -C "$root" log --since="$created_at" --until="$completed_at" \
     --format='%H' 2>/dev/null | wc -l | tr -d ' ' || true)
-  files_touched=$(git -C "$root" log --since="$created_at" --until="$completed_at" \
-    --name-only --format='' 2>/dev/null | sort -u | grep -c . || true)
+  window_files=$(git -C "$root" log --since="$created_at" --until="$completed_at" \
+    --name-only --format='' 2>/dev/null | sort -u || true)
+  files_touched=$(printf '%s\n' "$window_files" | grep -c . || true)
 fi
 # uncommitted residue at report time (repo-wide; v4 attributes neither commits
 # nor dirty state to a task, so this is an upper-bound flag, not attribution).
+# Structural noise is subtracted before counting so the flag means task dirt:
+# task-own paths (change-window files + the marker doc) are exact-match
+# subtracted, then grep -E exclusions are applied (see header).
 residue_paths=$(git -C "$root" status --porcelain -uall 2>/dev/null \
-  | sed 's/^...//; s/^"//; s/"$//' || true)
+  | sed 's/^...//; s/^"//; s/"$//' | awk 'NF' || true)
+own_paths=$(
+  {
+    if [ -n "$marker_file" ]; then printf '%s\n' "$marker_file"; fi
+    printf '%s\n' "$window_files"
+  } | awk 'NF' | sort -u
+)
+if [ -n "$own_paths" ]; then
+  residue_n_all=$(printf '%s\n' "$residue_paths" | grep -c . || true)
+  residue_paths=$(printf '%s\n' "$residue_paths" \
+    | grep -vxF -f <(printf '%s\n' "$own_paths") || true)
+  own_n=$((residue_n_all - $(printf '%s\n' "$residue_paths" | grep -c . || true)))
+else
+  own_n=0
+fi
+excl_patterns=$(
+  for ef in "$root/.workflow/retro-residue.exclude" \
+            "$root/.workflow.nosync/retro/residue.exclude"; do
+    if [ -f "$ef" ]; then cat "$ef"; fi
+  done
+  if [ -n "${WF4_RETRO_RESIDUE_EXCLUDE:-}" ]; then
+    printf '%s\n' "$WF4_RETRO_RESIDUE_EXCLUDE"
+  fi
+)
+excl_patterns=$(printf '%s\n' "$excl_patterns" \
+  | sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' || true)
+if [ -n "$excl_patterns" ]; then
+  residue_n_pre=$(printf '%s\n' "$residue_paths" | grep -c . || true)
+  residue_paths=$(printf '%s\n' "$residue_paths" \
+    | grep -vE -f <(printf '%s\n' "$excl_patterns") || true)
+  excl_n=$((residue_n_pre - $(printf '%s\n' "$residue_paths" | grep -c . || true)))
+else
+  excl_n=0
+fi
 residue_n=$(printf '%s\n' "$residue_paths" | grep -c . || true)
 
 # --- session + transcript (best-effort) -------------------------------------
@@ -284,12 +428,19 @@ echo "wasted / friction:"
 if [ "$marker_state" != "done" ]; then
   echo "  marker parity: doc shows [$marker_state] vs DB status=$status (${marker_file:-no anchor file})"
 fi
+if [ -n "$anchor_off" ]; then
+  echo "  anchor off node line at $anchor_off — marker read from the containing node; ^$task_id belongs at the end of the checkbox line"
+fi
 if [ "$residue_n" -gt 0 ]; then
   echo "  uncommitted residue at report time: $residue_n path(s)"
 fi
 echo "marker: [$marker_state] (${marker_file:-no anchor file})"
 echo "change window: $n_commits commits, $files_touched files"
-echo "residue: $residue_n dirty path(s)${residue_paths:+: $(printf '%s\n' "$residue_paths" | head -8 | tr '\n' ' ')}"
+suppressed=""
+if [ "$own_n" -gt 0 ] || [ "$excl_n" -gt 0 ]; then
+  suppressed=" (task-own/excluded suppressed: $own_n/$excl_n)"
+fi
+echo "residue: $residue_n dirty path(s)${residue_paths:+: $(printf '%s\n' "$residue_paths" | head -8 | tr '\n' ' ')}$suppressed"
 echo "session: ${session_pane:-?} ${session_agent:-?} ${session_id:-unrecorded}"
 echo "transcript: $tr_stats"
 echo "change candidate:"
@@ -298,11 +449,31 @@ echo "  (fill in during aggregate pass — journal holds the record)"
 printf '%s\n' "$report"
 
 if [ "$write" = 1 ]; then
-  out_dir="$root/.workflow.nosync/retro/journal/$(date +%Y/%m/%d)"
+  case "$status" in
+    done|dropped) ;;
+    *)
+      echo "wf4-retro: $task_id status=$status is not terminal — journal skipped" >&2
+      exit 1
+      ;;
+  esac
+  journal_root="$root/.workflow.nosync/retro/journal"
+  # one journal per task x state_revision: a re-run of done/retro on an
+  # unchanged task must not emit a second record. New journals carry a
+  # `state_revision:` header; pre-fix journals only have `(rev N)` on the
+  # status line — match both so old journals still dedupe.
+  dup=$(find "$journal_root" -type f -name "*-${task_id}*.md" \
+    -exec grep -lE "^state_revision: $rev\$|[(]rev $rev[)]" {} + 2>/dev/null \
+    | head -1 || true)
+  if [ -n "$dup" ]; then
+    echo "journal: $dup (already recorded at rev $rev — skipped)"
+    exit 0
+  fi
+  out_dir="$journal_root/$(date +%Y/%m/%d)"
   mkdir -p "$out_dir"
   out="$out_dir/$(date +%Y%m%dT%H%M%S)-$task_id.md"
   {
     echo "# retro $task_id"
+    echo "state_revision: $rev"
     echo
     printf '%s\n' "$report"
   } > "$out"

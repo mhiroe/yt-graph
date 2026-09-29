@@ -12,6 +12,7 @@ import {
   type RepositoryId,
 } from "./ids.ts";
 import { checkStepOperationIds } from "./cross_repo.ts";
+import { parseTaskLocator } from "./document.ts";
 import type { ComponentKind, ComponentState, ComponentStatus, Revision } from "./components.ts";
 import { initialStatus } from "./transitions.ts";
 import { type Command, evaluateCommandTransition, OPERATION_SPECS } from "./commands.ts";
@@ -69,6 +70,18 @@ export type StoredEventSummary = {
   readonly open_conflict: boolean;
 };
 
+/**
+ * component に結び付いた document locator を引く (Lane I、wish w-01M3N7RV5K の
+ * `task.start_doing` anchor gate)。
+ *
+ * **「bound `^t-` anchor」の正本は document projection の locator** (`path#^<task_id>`)。
+ * document を持たない decide 入口 (relation / event だけの fake) に「anchor 無し」を
+ * 答えさせないため、`relationLookup` / `eventLookup` と同じく lookup として additive に足す。
+ * lookup を持たない入口は gate が入口を名指しして `rejected` にする — `() => undefined` を
+ * 既定にすると「検査不能」と「未観測」が区別できず、検査不能のまま `doing` へ入れてしまう。
+ */
+export type DocumentLocatorLookup = (componentId: ComponentId) => string | undefined;
+
 export type DecideInput = {
   readonly command: Command;
   readonly context: RepositoryContext;
@@ -78,6 +91,11 @@ export type DecideInput = {
    * 採番は idempotent replay と一緒に保持する必要があるので、pure core では入力として受け取る。
    */
   readonly allocated_component_id?: ComponentId;
+  /**
+   * `task.start_doing` の anchor gate が引く document locator (additive)。
+   * 無い入口は gate が `rejected` にする — document projection を読める入口は必ず渡す。
+   */
+  readonly documentLocatorLookup?: DocumentLocatorLookup;
 };
 
 export type CommandDecision = {
@@ -169,6 +187,11 @@ export type ReplicationAwareDecideInput = RelationAwareDecideInput & {
 export type IterationAwareDecideInput = ReplicationAwareDecideInput & {
   readonly iterationLookup: IterationLookup;
   readonly now: string;
+  /**
+   * `task.start_doing` の anchor gate。storage を持つ入口は document projection の
+   * locator を必ず渡す — DecideInput の optional をここで必須に絞る。
+   */
+  readonly documentLocatorLookup: DocumentLocatorLookup;
 };
 
 /**
@@ -409,6 +432,39 @@ function decideTransition(
       }),
       appends_activity: false,
     });
+  }
+  // Lane I (wish w-01M3N7RV5K): `doing` へ入る task は bound `^t-` document anchor を要求する。
+  // evidence: anchor 無しのまま `doing` へ入った task は document node が実装 commit の中で
+  // 事後生成され、parity が自己修復できなかった。gate は applied になる遷移だけに掛ける —
+  // 上で返した noop / rejected の再判定には掛けない。
+  if (command.operation === "task.start_doing") {
+    const locatorLookup = input.documentLocatorLookup;
+    if (locatorLookup === undefined) {
+      return ok({
+        response: response(command, "rejected", {
+          component_id: target.address.component_id,
+          state_revision: target.state_revision,
+          reason: "task.start_doing は document locator を引ける入口" +
+            " (documentLocatorLookup を持つ decideCommandWithIterations) を必要とする",
+        }),
+        appends_activity: false,
+      });
+    }
+    const locator = locatorLookup(target.address.component_id);
+    const bound = locator !== undefined &&
+      parseTaskLocator(locator, target.address.component_id).ok;
+    if (!bound) {
+      return ok({
+        response: response(command, "rejected", {
+          component_id: target.address.component_id,
+          state_revision: target.state_revision,
+          reason: `task_document_anchor_missing: task ${target.address.component_id} には` +
+            ` ^${target.address.component_id} anchor の document 観測が無い` +
+            ` (document_locator: ${locator ?? "未設定"})`,
+        }),
+        appends_activity: false,
+      });
+    }
   }
   const next: ComponentState = {
     ...target,

@@ -13,11 +13,15 @@
 //
 // Two rules carry the constitution into runtime behaviour:
 //
-// 1. **Halt on the first non-`applied` disposition (noop included).** Later
-//    commands carry `expected_revision` values computed under the assumption
-//    that every prior command applied; submitting them after a noop/conflict
-//    would write on a stale base. `scope_opens_on` is `"applied"` fixed, so a
-//    noop never opens the mutation scope either.
+// 1. **Halt on the first non-`applied` disposition — except a `noop` on the
+//    plan's LAST command.** Later commands carry `expected_revision` values
+//    computed under the assumption that every prior command applied;
+//    submitting them after a noop/conflict would write on a stale base. A
+//    noop on the final command has no successor to protect: the target state
+//    the command aimed at already holds (e.g. `wish.plan_begin` on a Wish
+//    already in `plan` — a planner resume), so the run reports `completed`.
+//    `scope_opens_on` is `"applied"` fixed, so a noop never opens the
+//    mutation scope either way.
 // 2. **Never guess component IDs.** Plans that cut at an ID boundary return
 //    the new IDs in the applied response; exactly one continuation hop
 //    re-plans with them. If the response lacks the ID the run reports
@@ -25,7 +29,7 @@
 
 import { type ComponentId, parseComponentId, parseOperationId } from "../ids.ts";
 import type { Revision } from "../components.ts";
-import type { OperationName } from "../commands.ts";
+import { OPERATION_TRANSITIONS, type OperationName } from "../commands.ts";
 import { formatProtocolVersion, WORKFLOW_PROTOCOL_VERSION } from "../protocol.ts";
 import {
   type MutationScope,
@@ -86,10 +90,17 @@ export type ExecutedCommand = {
  * data** — the runner never throws, so callers can branch on `completed` /
  * `halted_at` / `error` instead of catching.
  */
+/** `runSkillPhase` の phase 名と、phase でない entry (`wish.complete` / `wish.transition`) の識別子。 */
+export type RunnerPhase = SkillPhase | "wish_complete" | "wish_transition";
+
 export type PhaseRunResult = {
-  readonly phase: SkillPhase | "wish_complete";
+  readonly phase: RunnerPhase;
   readonly ok: boolean;
-  /** The final plan's commands ALL applied and no continuation is pending. */
+  /**
+   * The final plan ran to its end (a `noop` on the last command counts as
+   * satisfied — the state it aimed at already holds) and no continuation is
+   * pending.
+   */
   readonly completed: boolean;
   /** An ID-boundary continuation hop happened. */
   readonly continued: boolean;
@@ -228,7 +239,7 @@ type ExecutedPlan = {
 };
 
 function finish(
-  phase: SkillPhase | "wish_complete",
+  phase: RunnerPhase,
   commands: readonly ExecutedCommand[],
   continued: boolean,
   lastPlan: ExecutedPlan | undefined,
@@ -338,10 +349,13 @@ function continuationInput(
  * Plan the phase and submit its commands in order through `submit`.
  *
  * **Halts on the first non-`applied` disposition** and does not submit the
- * rest: their `expected_revision` assumed applied predecessors. When every
- * command applied and the input was incomplete (no `wish` for planner, no
- * `task` for doit), exactly one continuation hop re-plans with the IDs the
- * applied response returned — never guessed.
+ * rest: their `expected_revision` assumed applied predecessors. One
+ * exception: a `noop` on the plan's LAST command means the target state
+ * already holds (planner resume on a `plan` Wish), so the run completes
+ * instead — with `scope` unopened, since `scope_opens_on` is `applied`.
+ * When every command applied and the input was incomplete (no `wish` for
+ * planner, no `task` for doit), exactly one continuation hop re-plans with
+ * the IDs the applied response returned — never guessed.
  */
 export function runSkillPhase(
   submit: CliSubmit,
@@ -367,7 +381,8 @@ export function runSkillPhase(
     const plan = planned.value;
     let haltedAt: number | undefined;
     let transportError: { code: string; message: string } | undefined;
-    for (const command of plan.commands) {
+    let allApplied = true;
+    for (const [index, command] of plan.commands.entries()) {
       seq += 1;
       const operationId = `${ctx.operation_prefix}-${seq}`;
       const parsedId = parseOperationId(operationId, "operation_prefix");
@@ -383,11 +398,20 @@ export function runSkillPhase(
       if (!cli.ok || view === undefined) {
         // No readable disposition. A structured `ok:false` still carries the
         // CLI's semantic answer; preserve it instead of flattening.
+        allApplied = false;
         haltedAt = commands.length - 1;
         transportError = submitFailure(cli);
         break;
       }
       if (view.disposition !== "applied") {
+        allApplied = false;
+        // **最後の command の noop は halt しない。** 目指す state は既に
+        // 満たされていて (plan の Wish への plan_begin 再入)、後続 command の
+        // stale base を心配する必要が無い。scope は fullyApplied が false の
+        // ままなので noop では開かない。
+        if (view.disposition === "noop" && index === plan.commands.length - 1) {
+          break;
+        }
         haltedAt = commands.length - 1;
         break;
       }
@@ -395,7 +419,7 @@ export function runSkillPhase(
     lastPlan = {
       scope: plan.mutation_scope,
       after: plan.mutation_scope_after,
-      fullyApplied: haltedAt === undefined,
+      fullyApplied: allApplied,
       outOfScope: plan.out_of_scope,
     };
     if (haltedAt !== undefined) {
@@ -461,4 +485,119 @@ export function runWishCompletion(
   const applied = cli.ok && view !== undefined && view.disposition === "applied";
   const transportError = !cli.ok || view === undefined ? submitFailure(cli) : undefined;
   return finish(phase, [record], false, undefined, applied ? undefined : 0, transportError);
+}
+
+/**
+ * `wish.transition` が出せる Wish 単独 transition operation。
+ *
+ * `OPERATION_NAMES` に在るがどの phase も emit しなかった口 — `plan` のままの
+ * Wish がどの terminal へも辿れなかった defect の fix (intake
+ * `20260928T202306`)。`wish.complete` は既存の `wish.complete` kind が持つので
+ * ここへは入れない。`wish.plan_begin` は planner の開始 operation で、人の
+ * 指示で状態を動かす口ではない。
+ */
+export const WISH_TRANSITION_OPERATIONS = [
+  "wish.request_ready",
+  "wish.set_pending",
+  "wish.start_doing",
+  "wish.drop",
+] as const;
+export type WishTransitionOperation = (typeof WISH_TRANSITION_OPERATIONS)[number];
+
+export type WishTransitionInput = {
+  readonly wish: { readonly component_id: ComponentId; readonly state_revision: Revision };
+  readonly operation: WishTransitionOperation;
+  /** The user's reason. Empty means "no instruction", not "no reason given". */
+  readonly reason: string;
+};
+
+/**
+ * Explicit user instruction that moves a Wish one transition (e.g.
+ * `plan -> pending` で止める、`plan -> dropped` で畳む、terminal へ向かう
+ * `ready` / `doing` への hop)。**Not a SkillPhase** — `wish.complete` と同じく
+ * 人の指示だけが動かす口で、non-empty `reason` が無ければ submit しない
+ * (gm 裁定 2026-09-28: user instruction + verbatim reason gate)。
+ *
+ * `OPERATION_SPECS` に `reason` field が無い operation
+ * (`wish.request_ready` / `wish.start_doing`) では、指示理由を
+ * `activity.append` (`user.instruction`) として Wish の履歴へ追記する —
+ * ledger に人の理由が残らない遷移を作らない。
+ */
+export function runWishTransition(
+  submit: CliSubmit,
+  input: WishTransitionInput,
+  ctx: RunContext,
+): PhaseRunResult {
+  const phase = "wish_transition" as const;
+  if (typeof input.reason !== "string" || input.reason.length === 0) {
+    return finish(phase, [], false, undefined, undefined, {
+      code: "missing_field",
+      message:
+        "wish.transition には空でない reason が必要である (人の理由無しに Wish を動かさない)",
+    });
+  }
+  if (!WISH_TRANSITION_OPERATIONS.includes(input.operation)) {
+    return finish(phase, [], false, undefined, undefined, {
+      code: "unknown_operation",
+      message: `wish.transition が出せるのは ${WISH_TRANSITION_OPERATIONS.join(" / ")} のみ: ${
+        String(input.operation)
+      }`,
+    });
+  }
+  // `reason` を payload に持てるのは `wish.set_pending` / `wish.drop` だけ
+  // (`OPERATION_SPECS`)。残り 2 つは trailing activity で理由を残す。
+  const carriesReason = input.operation === "wish.set_pending" ||
+    input.operation === "wish.drop";
+  const to = OPERATION_TRANSITIONS[input.operation]?.to;
+  const planned: PlannedCommand[] = [{
+    operation: input.operation,
+    target_id: input.wish.component_id,
+    expected_revision: input.wish.state_revision,
+    payload: carriesReason ? { reason: input.reason } : {},
+    why: `人の指示で Wish を ${to ?? "?"} へ進める`,
+  }];
+  if (!carriesReason) {
+    planned.push({
+      operation: "activity.append",
+      target_id: input.wish.component_id,
+      payload: {
+        activity_type: "user.instruction",
+        detail: { operation: input.operation, reason: input.reason },
+      },
+      why: "transition operation に reason 欄が無いので、人の指示理由を履歴へ残す",
+    });
+  }
+
+  const actorRef = ctx.actor_ref ?? "user";
+  const commands: ExecutedCommand[] = [];
+  for (const [index, command] of planned.entries()) {
+    const operationId = `${ctx.operation_prefix}-${index + 1}`;
+    const parsedId = parseOperationId(operationId, "operation_prefix");
+    if (!parsedId.ok) {
+      return finish(phase, commands, false, undefined, undefined, {
+        code: parsedId.error.code,
+        message: parsedId.error.message,
+      });
+    }
+    const cli = submit(submitRequest(command, ctx, actorRef, operationId));
+    const view = responseViewOf(cli.result);
+    commands.push(executedRecord(operationId, command, cli.exit_code, view));
+    if (!cli.ok || view === undefined) {
+      return finish(
+        phase,
+        commands,
+        false,
+        undefined,
+        commands.length - 1,
+        submitFailure(cli),
+      );
+    }
+    if (view.disposition !== "applied") {
+      // 先頭 (transition) が noop なら目指す状態は既に満たされている —
+      // 完了として返し、理由記録の activity は出さない (再送の idempotent 経路)。
+      if (view.disposition === "noop" && index === 0) break;
+      return finish(phase, commands, false, undefined, commands.length - 1, undefined);
+    }
+  }
+  return finish(phase, commands, false, undefined, undefined, undefined);
 }

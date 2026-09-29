@@ -16,7 +16,8 @@ All Core interaction goes through the vendored runtime at
 `.agents/workflow-v4/`:
 
 - Skill work: `.agents/workflow-v4/wf4.sh '<request-json>'` — wraps
-  `src/harness/skill_entry.ts` (`skill.phase` / `wish.complete` request kinds).
+  `src/harness/skill_entry.ts` (`skill.phase` / `wish.complete` / `wish.transition`
+  request kinds).
 - Read-only CLI ops: `.agents/workflow-v4/wf4.sh cli '<request-json>'` — raw
   `src/cli/main.ts` read ops (`document.inspect_locator`, `document.list_nodes`,
   `mind_wish.list`).
@@ -59,15 +60,33 @@ represents it must carry `^w-...`; if it does not, write the anchor with
 `document.register_component_id`. Unanchored wishes are invisible to
 `cutover.scan` / `cutover.bind`.
 
+## Readiness prerequisites
+
+Before presenting the readiness decision, confirm the wish document carries
+(user ruling 2026-09-29, sufficiency classes 3-4):
+
+- An **Open questions** list holding every pending user question — each one
+  also sent through the single user-question channel (`gm`, per `herdr.md`).
+- The wish's **cross-wish dependencies and triggers** — what it blocks, what
+  blocks it, and any pre-authorized wake path.
+
+Neither may live only in a PM file, handoff note, or dispatch claim. If a
+question or dependency is still external, write it into the document first,
+then present readiness.
+
 ## Boundaries
 
 - `mutation_scope` is `docs_only`: planner edits the wish's Markdown document
   and spec text, never implementation code.
+- Re-entering planner on a wish that is already in `plan` is a resume: the
+  `wish.plan_begin` response reports `noop` (the state already holds) and the
+  run still completes with `docs_only` open — proceed to the document work.
 - Planner ends by presenting the readiness decision to the user. It does not
   mark the wish `ready` itself; `doit` requires the user's explicit readiness
-  decision first.
-- If a response disposition is not `applied`, stop and report — do not retry
-  with guessed state.
+  decision first. To park a wish, the user instruction goes through
+  `wish.transition` with `wish.set_pending` + a verbatim `reason`.
+- If the run halts (`halted_at` set / exit 3) or returns an error, stop and
+  report — do not retry with guessed state.
 
 ## Tab naming
 

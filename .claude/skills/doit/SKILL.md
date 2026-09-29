@@ -72,6 +72,11 @@ omit `session` — the run proceeds without it.
   `document.register_component_id` before flipping the marker.
 - Halt on the FIRST non-`applied` disposition (including `noop`) and report the
   response verbatim instead of retrying.
+- Bound verification evidence at capture (downscale + count cap) and spill
+  any single output over 64 KB to a file, so only the path reaches the
+  turn/journal surface — the binding text is `done` "Bounded evidence" /
+  "Output spill". Large artifacts the task produced are cleared at the
+  task boundary per `done` "Task-boundary artifact cleanup".
 - Right after this pane is assigned its role — and before the first handoff —
   align the pane label per "Tab and pane naming" in the shared `herdr.md`
   instructions. That document is the canonical rule — consult it for the

@@ -21,6 +21,7 @@ import type { RelationKey } from "../relations.ts";
 import type { CommandResponse } from "../responses.ts";
 import { rowString } from "./driver.ts";
 import { applyIterationEffect, iterationLookupOf, stampBirthIteration } from "./iterations.ts";
+import { locatorResolverOf } from "./document_projection.ts";
 import type { SqliteWorkflowStore } from "./store.ts";
 
 /** component ID の採番。既定は operation_id から決まるので、crash 後の再送でも同じ ID になる。 */
@@ -248,6 +249,7 @@ export function runLocalCommand(
       relationLookup: store.relationLookup,
       eventLookup: store.eventLookup,
       iterationLookup: iterationLookupOf(driver),
+      documentLocatorLookup: locatorResolverOf(store),
       now,
       ...(allocated === undefined ? {} : { allocated_component_id: allocated }),
     });

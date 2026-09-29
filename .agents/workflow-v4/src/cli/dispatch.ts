@@ -69,8 +69,8 @@ import {
   resolveWishInRepositories,
   type WishRepositoryResolution,
 } from "./mind_wish_resolver.ts";
-import { scanRepository, type VaultScanPort } from "../cutover/scan.ts";
-import { bindAnchors } from "../cutover/bind.ts";
+import { scanRepository, type ScanResult, type VaultScanPort } from "../cutover/scan.ts";
+import { bindAnchors, rebindComponent } from "../cutover/bind.ts";
 import { auditCutover } from "../cutover/audit.ts";
 import { isIterationOperation } from "../decide.ts";
 import {
@@ -149,6 +149,11 @@ export const CLI_REQUEST_KINDS = [
   "document.read_task",
   "document.move_task",
   "document_projection.observe",
+  // `observe` は caller の組み立てた値を信じる。`rebind` は component_id だけを受け、
+  // 観測を vault scan から導出する — drift 修復が手組みの locator/hash 推測に
+  // 依存しないようにする口 (workflow.drift 再発の根治)。`vault_scan` 未注入は
+  // `unsupported_feature`。
+  "document_projection.rebind",
   // Slice D。Journal の中身は CLI が解釈せず、record を JSON のまま往復させる。
   "replication.publish_pending",
   "replication.mark_published",
@@ -285,6 +290,28 @@ function ioFailure(kind: string, cause: unknown): CliResponse {
     { code: "missing_field", message: `IO に失敗した: ${String(cause)}` },
     CLI_EXIT_UNAVAILABLE,
   );
+}
+
+/**
+ * `vault_scan` port で repo 全体を走査する。file の読み取り失敗は crash にせず
+ * `unreadable` へ畳む。`cutover.*` と `document_projection.rebind` が共有する入口 —
+ * 両者が同じ scan 導出を見ることを保証する。
+ */
+function scanVault(vaultScan: VaultScanPort): {
+  readonly scan: ScanResult;
+  readonly unreadable: { path: string; message: string }[];
+} {
+  const scannedFiles: { path: string; raw: string }[] = [];
+  const unreadable: { path: string; message: string }[] = [];
+  for (const path of vaultScan.files()) {
+    const text = vaultScan.read(path);
+    if (!text.ok) {
+      unreadable.push({ path, message: text.error.message });
+      continue;
+    }
+    scannedFiles.push({ path, raw: text.value });
+  }
+  return { scan: scanRepository(scannedFiles), unreadable };
 }
 
 /**
@@ -1194,6 +1221,49 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
       };
     }
 
+    case "document_projection.rebind": {
+      // caller の観測値 (locator / title / observed_hash) は受け付けない — 観測は
+      // vault scan から導出する。component_id 以外の field を通すと、bind 済みの
+      // projection を caller の推測で上書きする入口になる (locator drift の温床)。
+      for (const key of Object.keys(raw)) {
+        if (key !== "kind" && key !== "component_id") {
+          return failure(kind, {
+            code: "unexpected_field",
+            message: `document_projection.rebind は component_id のみを取る: ${key}`,
+            path: key,
+          }, CLI_EXIT_BAD_REQUEST);
+        }
+      }
+      const componentId = parseComponentId(raw["component_id"], "component_id");
+      if (!componentId.ok) return failure(kind, componentId.error, CLI_EXIT_BAD_REQUEST);
+      // `vault_scan` は runtime binding (fs_scan.ts) が注入する port。cutover.* と同じく
+      // 無い環境は「処理できない」ので exit 1 — request の形は正しい。
+      const vaultScan = ports.vault_scan;
+      if (vaultScan === undefined) {
+        return failure(kind, {
+          code: "unsupported_feature",
+          message: `${kind} には vault_scan port が必要 (未注入)`,
+        }, CLI_EXIT_UNAVAILABLE);
+      }
+      const { scan, unreadable } = scanVault(vaultScan);
+      const rebound = rebindComponent(
+        ports.projection,
+        scan,
+        componentId.value,
+      );
+      if (!rebound.ok) return failure(kind, rebound.error, CLI_EXIT_NOT_APPLIED);
+      return {
+        kind,
+        ok: true,
+        exit_code: exitForDisposition(rebound.value.disposition),
+        result: {
+          ...rebound.value,
+          ...(unreadable.length === 0 ? {} : { unreadable }),
+          ...(scan.errors.length === 0 ? {} : { scan_errors: scan.errors }),
+        },
+      };
+    }
+
     case "repository.provision": {
       const root = requireRoot(ports);
       if (!root.ok) return failure(kind, root.error, CLI_EXIT_BAD_REQUEST);
@@ -1345,17 +1415,7 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
         }, CLI_EXIT_UNAVAILABLE);
       }
       // file の読み取り失敗は crash にせず per-file の `unreadable` として残す。
-      const scannedFiles: { path: string; raw: string }[] = [];
-      const unreadable: { path: string; message: string }[] = [];
-      for (const path of vaultScan.files()) {
-        const text = vaultScan.read(path);
-        if (!text.ok) {
-          unreadable.push({ path, message: text.error.message });
-          continue;
-        }
-        scannedFiles.push({ path, raw: text.value });
-      }
-      const scan = scanRepository(scannedFiles);
+      const { scan, unreadable } = scanVault(vaultScan);
       if (kind === "cutover.scan") {
         // 読み取り専用。anchor を file ごとにまとめて返す。
         const byFile = new Map<string, unknown[]>();
@@ -1372,7 +1432,7 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
           ok: true,
           exit_code: CLI_EXIT_OK,
           result: {
-            files_scanned: scannedFiles.length,
+            files_scanned: scan.sources.size + scan.skipped_derived.length,
             anchors_found: scan.anchors.length,
             duplicates: scan.duplicates,
             skipped_derived: scan.skipped_derived,

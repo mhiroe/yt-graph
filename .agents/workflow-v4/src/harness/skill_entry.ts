@@ -6,10 +6,11 @@
 // used for the same reason as `cli/main.ts`: `process.stdout.write()` is
 // async on pipes and can truncate under `process.exit()`.
 //
-// **Entry-local request kinds.** `skill.phase` / `wish.complete` are NOT added
-// to `dispatch.ts`: they are harness-level requests that fan out into multiple
-// `workflow.submit` calls through the real CLI subprocess, not single store
-// commands. Nothing in v3 calls this entry yet.
+// **Entry-local request kinds.** `skill.phase` / `wish.complete` /
+// `wish.transition` are NOT added to `dispatch.ts`: they are harness-level
+// requests that fan out into multiple `workflow.submit` calls through the
+// real CLI subprocess, not single store commands. Nothing in v3 calls this
+// entry yet.
 //
 // 使い方:
 //
@@ -46,12 +47,15 @@ import {
   type RunContext,
   runSkillPhase,
   runWishCompletion,
+  runWishTransition,
+  WISH_TRANSITION_OPERATIONS,
   type WishCompletionInput,
+  type WishTransitionInput,
 } from "./phase_runner.ts";
 
 const CLI_ENTRY = new URL("../cli/main.ts", import.meta.url).href;
 
-const ENTRY_REQUEST_KINDS = ["skill.phase", "wish.complete"] as const;
+const ENTRY_REQUEST_KINDS = ["skill.phase", "wish.complete", "wish.transition"] as const;
 
 type Options = {
   readonly repository_id: string;
@@ -67,6 +71,7 @@ const USAGE = [
   "",
   "request kinds: skill.phase (phase + flattened phase input + operation_prefix)",
   "               wish.complete (wish + reason + operation_prefix)",
+  "               wish.transition (wish + operation + reason + operation_prefix)",
   "request を省くと stdin から JSON を 1 件読む。stdout は JSON 1 行、診断は stderr。",
   "exit code: 0=phase 完走 / wish.complete applied 1=CLI 到達不能 2=request 不正 3=非 applied で halt",
 ].join("\n");
@@ -408,6 +413,38 @@ function wishCompletionInputOf(raw: Record<string, unknown>): Result<WishComplet
   return ok({ wish: wish.value, reason });
 }
 
+function wishTransitionInputOf(raw: Record<string, unknown>): Result<WishTransitionInput> {
+  const wish = componentRefOf(raw, "wish");
+  if (!wish.ok) return wish;
+  if (wish.value === undefined) {
+    return err("missing_field", "wish.transition は wish を必要とする", "wish");
+  }
+  const operationRaw = raw["operation"];
+  if (operationRaw === undefined) {
+    return err("missing_field", "wish.transition は operation を必要とする", "operation");
+  }
+  const operation = WISH_TRANSITION_OPERATIONS.find((candidate) => candidate === operationRaw);
+  if (operation === undefined) {
+    return err(
+      "invalid_field_type",
+      `operation は ${WISH_TRANSITION_OPERATIONS.join(" / ")} のいずれかである必要がある`,
+      "operation",
+    );
+  }
+  const reason = raw["reason"];
+  if (reason === undefined) {
+    return err("missing_field", "wish.transition には reason が必要である", "reason");
+  }
+  if (typeof reason !== "string" || reason.length === 0) {
+    return err(
+      "invalid_field_type",
+      "reason は空でない string である必要がある (人の理由無しに Wish を動かさない)",
+      "reason",
+    );
+  }
+  return ok({ wish: wish.value, operation, reason });
+}
+
 // ---------------------------------------------------------------------------
 // Run -> CliResponse
 // ---------------------------------------------------------------------------
@@ -495,6 +532,19 @@ function dispatchEntry(options: Options, request: unknown): CliResponse {
         );
       }
       return respond(kind, runWishCompletion(submit, input.value, ctx.value));
+    }
+    case "wish.transition": {
+      const input = wishTransitionInputOf(raw);
+      if (!input.ok) {
+        return failure(
+          kind,
+          input.error.code,
+          input.error.message,
+          CLI_EXIT_BAD_REQUEST,
+          input.error.path,
+        );
+      }
+      return respond(kind, runWishTransition(submit, input.value, ctx.value));
     }
   }
 }

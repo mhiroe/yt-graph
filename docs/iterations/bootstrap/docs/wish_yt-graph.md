@@ -90,35 +90,35 @@ Consult record (2026-09-29, discovery strategy 拡張):
 YouTube 取得は adapter の背後に置き、credential が無い間は fixture adapter で
 pipeline と UI を通す。
 
-- [ ] app skeleton: pnpm + Vite + React + TS + Three.js 3D graph + local API +
+- [ ] app skeleton: pnpm + Vite + React + TS + Three.js 3D graph + local API + ^t-01M3NXF509
       SQLite provenance-first schema (channel / edge / discovery_evidence /
       channel_snapshot / judgment / human_decision)
   - smoke: `pnpm install` → `pnpm dev` で UI + API 起動、README 同一 diff
-- [ ] YouTube source adapter: interface + fixture adapter (credential 不要)
+- [ ] YouTube source adapter: interface + fixture adapter (credential 不要) ^t-01M3NXG5G2
   - data source は ContentHub のログイン済みセッション経由 (x-graph 方式、user 確定
     2026-09-28)。ContentHub 側 adapter は contenthub_pm に依頼済み; 届いたら
     ContentHub 実装を差し込む。API-key adapter は不採用 (理由:
     `.agent-state/decision-2026-09-28-readiness.md`)
-- [ ] discovery pipeline: seed fingerprint → search / subscriptions / playlists
+- [ ] discovery pipeline: seed fingerprint → search / subscriptions / playlists ^t-01M3NXG93D
       expansion → candidate merge with provenance → deterministic cleanup
   - fixture adapter で 1 seed → candidate 群が provenance 付きで DB に入る
   - discovery の方向は 2026-09-29 consult で拡張 (spec_product.md
     "discovery strategy"): relation-edge walk と subscription-gap
     collaborative filtering、段階評価 (Channel Activity DNA)。PoC の
     fixture 範囲は変えず、expansion source の設計余地として記録。
-- [ ] jev judgment adapter: 初期 criteria relevance / novelty / signal density /
+- [ ] jev judgment adapter: 初期 criteria relevance / novelty / signal density / ^t-01M3NXGCAD
       distinctiveness (user 確定 2026-09-28) で score / filter
-- [ ] chappy consult adapter: ChatGPT で candidate 生成 (wall-bounce)
+- [ ] chappy consult adapter: ChatGPT で candidate 生成 (wall-bounce) ^t-01M3NXGFK7
   - 前提: ContentHub 起動 + chappy main slot の ChatGPT login。未 login なら
     adapter は skip して他 source で続行 (夜間 run を止めない)
-- [ ] graph UI + preview-and-route UX (accept / reject / later 永続化) +
+- [ ] graph UI + preview-and-route UX (accept / reject / later 永続化) + ^t-01M3NXGJBS
       accept node からの再展開
   - UI 系は x-graph 同様の調査画面 (inspection) と adhoc 操作の土台に
     なるよう意識する (user 指示 2026-09-29; PoC では preview/route が
     先行、調査画面・adhoc mode の詳細は spec_product.md scope 参照)
-- [ ] acceptance (fixture): 1 seed → candidates → jev → preview → route →
+- [ ] acceptance (fixture): 1 seed → candidates → jev → preview → route → ^t-01M3NXGPDT
       expand が 1 周動く
-- [ ] user subscriptions signal (ContentHub session 経由) — **夜間対象外**:
+- [ ] user subscriptions signal (ContentHub session 経由) — **夜間対象外**: ^t-01M3NXGS3D
       ContentHub 側 adapter の到着待ち
   - 旧案 YouTube OAuth (`youtube.readonly`) は 2026-09-28 に不採用 (ContentHub
     session 経路へ切替; 理由は `.agent-state/decision-2026-09-28-readiness.md`)
