@@ -113,6 +113,17 @@ tags:
   - yt-client / ContentHub webview host (別 repo 依存)
   - dokoitsu (個人 concierge agent; Curiosity Profile の将来 source —
     未実装、adapter seam で接続)
+- ContentHub file transport の wire form (user directive 2026-09-30、
+  contenthub_pm 経由 — yt2doc で live 検証済み):
+  - hidden instance の window 表示は transport kind `host.show`。
+    `<root>/.transport/outbox/<id>.json` に envelope
+    `{id, type:"host.show", created_at, input:{}}` を書き込むと、
+    生存中の owner instance が host window を raise する (respawn しない)。
+  - response は inbox に `host.response` として届く。
+  - 用途: 未 login 時の user-facing login window 表示など。`available()`
+    系の cheap gate が ContentHub を spawn しない方針は変えず、window を
+    出したい時はこの transport kind を使う (rule_yt-graph.md
+    "consult adapter seam" と連動)。
 
 ## discovery strategy
 
