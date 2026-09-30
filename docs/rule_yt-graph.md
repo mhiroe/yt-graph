@@ -145,3 +145,15 @@ constitution: none (repo autonomy)
   使う。native module (better-sqlite3 等) は PoC では持ち込まない
   (2026-09-29, t-01M3NXF509 で確定 — install を credential/ネイティブ
   build 無しで通すため)。
+
+### herdr workspace layout
+
+scope: 全域
+constitution: none (repo autonomy)
+
+- repo-bound agent はその repo の herdr workspace に住まわせる
+  (user directive 2026-09-30)。この repo の PM pane は `yt-graph` label の
+  workspace に置く。
+- PM が spawn する TL / worker pane も同じ repo workspace 内に置く
+  (new tab / split は PM の判断)。gm workspace や他 workspace に
+  repo-bound pane を立てない。
