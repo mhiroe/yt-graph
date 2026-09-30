@@ -10,7 +10,8 @@
     "build": "tsc --noEmit && vite build",
     "lint": "tsc --noEmit",
     "smoke": "node scripts/smoke.mjs",
-    "probe:source": "tsx scripts/probe-source.ts"
+    "probe:source": "tsx scripts/probe-source.ts",
+    "judge": "tsx scripts/run-judge.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

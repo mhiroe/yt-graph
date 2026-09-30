@@ -59,6 +59,35 @@ export function insertSnapshot(
     .run(channelId, JSON.stringify(payload));
 }
 
+export function insertJudgment(
+  j: { channelId: string; judge: string; criteria: unknown; score: number; verdict: string },
+  handle: DatabaseSync = defaultDb,
+): void {
+  handle
+    .prepare("insert into judgment (channel_id, judge, criteria, score, verdict) values (?, ?, ?, ?, ?)")
+    .run(j.channelId, j.judge, JSON.stringify(j.criteria), j.score, j.verdict);
+}
+
+export type JudgmentRow = {
+  channel_id: string;
+  judge: string;
+  score: number;
+  verdict: string;
+};
+
+/** Latest judgment per channel. */
+export function latestJudgments(handle: DatabaseSync = defaultDb): Map<string, JudgmentRow> {
+  const rows = handle
+    .prepare(
+      `select j.channel_id, j.judge, j.score, j.verdict
+       from judgment j
+       join (select channel_id, max(id) mid from judgment group by channel_id) latest
+         on latest.mid = j.id`,
+    )
+    .all() as unknown as JudgmentRow[];
+  return new Map(rows.map((r) => [r.channel_id, r]));
+}
+
 /** Channel ids the human already rejected — deterministic cleanup drops re-hits. */
 export function rejectedIds(handle: DatabaseSync = defaultDb): Set<string> {
   const rows = handle
@@ -73,6 +102,7 @@ export type CandidateView = {
   status: string;
   sources: string[];
   evidence_count: number;
+  judgment?: { judge: string; score: number; verdict: string };
 };
 
 /** Candidates with their provenance — what the UI lists before judgment. */
@@ -85,6 +115,7 @@ export function listCandidates(handle: DatabaseSync = defaultDb): CandidateView[
        order by c.id`,
     )
     .all() as unknown as { id: string; title: string; status: string; source: string | null }[];
+  const judgments = latestJudgments(handle);
   const byId = new Map<string, CandidateView>();
   for (const r of rows) {
     const v = byId.get(r.id) ?? { id: r.id, title: r.title, status: r.status, sources: [], evidence_count: 0 };
@@ -92,6 +123,8 @@ export function listCandidates(handle: DatabaseSync = defaultDb): CandidateView[
       v.evidence_count += 1;
       if (!v.sources.includes(r.source)) v.sources.push(r.source);
     }
+    const j = judgments.get(r.id);
+    if (j) v.judgment = { judge: j.judge, score: j.score, verdict: j.verdict };
     byId.set(r.id, v);
   }
   return [...byId.values()];

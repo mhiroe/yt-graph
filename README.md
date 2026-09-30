@@ -40,6 +40,8 @@ grow a navigable graph of similar / interesting channels.
 - `pnpm dev` — run API + web UI together (`scripts/dev.mjs`)
 - `pnpm dev:api` / `pnpm dev:web` — run either side alone
 - `pnpm smoke` — self-contained API boot check (scratch port, in-memory DB)
+- `pnpm judge` — discovery → judgment one-pass on a scratch DB
+  (`YTG_JUDGE=auto|jev|heuristic`)
 - `pnpm lint` — `tsc --noEmit` typecheck (thin lint until a real linter lands)
 - `pnpm build` — typecheck + `vite build`
 

@@ -28,12 +28,16 @@ export async function runDiscovery(
   const seed = await adapter.resolveChannel(seedRef);
   if (!seed) throw new Error(`seed not resolved: ${seedRef}`);
 
-  upsertChannel(seed, "seed", handle);
-  insertSnapshot(seed.id, seed, handle);
-
-  // Seed fingerprint from recent upload titles.
+  // Seed fingerprint from recent upload titles + the channel's own
+  // title/description — persisted on the seed snapshot so later stages
+  // (judgment) don't need the adapter again.
   const uploads = await adapter.channelUploads(seed.id, 20);
-  const fingerprint = fingerprintFromTitles(uploads.map((v) => v.title));
+  const fingerprint = fingerprintFromTitles(
+    [seed.title, seed.description ?? "", ...uploads.map((v) => v.title)].filter(Boolean),
+  );
+
+  upsertChannel(seed, "seed", handle);
+  insertSnapshot(seed.id, { channel: seed, fingerprint }, handle);
 
   // Merge map: channelId -> {channel, evidence[]}
   const hits = new Map<string, RawHit>();

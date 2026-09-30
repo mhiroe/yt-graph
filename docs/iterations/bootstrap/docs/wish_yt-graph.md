@@ -106,7 +106,7 @@ pipeline と UI を通す。
     "discovery strategy"): relation-edge walk と subscription-gap
     collaborative filtering、段階評価 (Channel Activity DNA)。PoC の
     fixture 範囲は変えず、expansion source の設計余地として記録。
-- [ ] jev judgment adapter: 初期 criteria relevance / novelty / signal density / ^t-01M3NXGCAD
+- [done] jev judgment adapter: 初期 criteria relevance / novelty / signal density / ^t-01M3NXGCAD
       distinctiveness (user 確定 2026-09-28) で score / filter
 - [ ] chappy consult adapter: ChatGPT で candidate 生成 (wall-bounce) ^t-01M3NXGFK7
   - 前提: ContentHub 起動 + chappy main slot の ChatGPT login。未 login なら

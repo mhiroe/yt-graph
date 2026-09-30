@@ -97,6 +97,19 @@ constitution: none (repo autonomy)
 - search 系 expansion は 1 pass あたり最大 2 query に抑える
   (quota law に連動)。
 
+### judgment adapter seam
+
+scope: adapters
+constitution: none (repo autonomy)
+
+- candidate 採点は `server/judgment/` の `JudgeAdapter` interface 越しのみ。
+  選択は `YTG_JUDGE` env (`auto` 既定 / `jev` / `heuristic`)。auto は
+  credential 検出時のみ jev、それ以外は deterministic heuristic に落ちる
+  — 夜間 run を missing credential で止めない (2026-09-29, t-01M3NXGCAD)。
+- 初期 criteria は user 確定の 4 件: relevance / novelty / signal_density /
+  distinctiveness。verdict threshold (pass >=0.5 / review >=0.3) は
+  `verdictFor` 一か所に集約する。
+
 ### local store
 
 scope: 全域
