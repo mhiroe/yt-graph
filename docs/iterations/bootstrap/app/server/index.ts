@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { db, listChannels, listEdges } from "./db.js";
-import { listCandidates } from "./store.js";
+import { insertDecision, listCandidates, type Decision } from "./store.js";
 import { createSourceAdapter } from "./sources/index.js";
 import { runDiscovery } from "./discovery/pipeline.js";
 import { runJudgment } from "./judgment/run.js";
@@ -51,6 +51,30 @@ const server = createServer(async (req, res) => {
     }
     if (url.pathname === "/api/judge" && req.method === "POST") {
       const result = await runJudgment(undefined, db);
+      return json(res, 200, result);
+    }
+    if (url.pathname === "/api/decide" && req.method === "POST") {
+      const body = (await readBody(req)) as { channel_id?: string; decision?: string; note?: string };
+      const decision = body.decision as Decision;
+      if (!body.channel_id || !["accept", "reject", "later"].includes(decision)) {
+        return json(res, 400, { error: "channel_id + decision (accept|reject|later) required" });
+      }
+      const exists = db.prepare("select id from channel where id = ?").get(body.channel_id);
+      if (!exists) return json(res, 404, { error: "unknown channel" });
+      insertDecision({ channelId: body.channel_id, decision, note: body.note }, db);
+      return json(res, 200, { ok: true });
+    }
+    if (url.pathname === "/api/expand" && req.method === "POST") {
+      const body = (await readBody(req)) as { channel_id?: string };
+      if (!body.channel_id) return json(res, 400, { error: "missing channel_id" });
+      const ch = db.prepare("select status from channel where id = ?").get(body.channel_id) as
+        | { status: string }
+        | undefined;
+      if (!ch) return json(res, 404, { error: "unknown channel" });
+      if (!["accepted", "seed"].includes(ch.status)) {
+        return json(res, 409, { error: "expand requires an accepted or seed channel" });
+      }
+      const result = await runDiscovery(createSourceAdapter(), body.channel_id, db);
       return json(res, 200, result);
     }
     return json(res, 404, { error: "not_found", path: url.pathname });

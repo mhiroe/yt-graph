@@ -123,6 +123,19 @@ constitution: none (repo autonomy)
   spawn しない — 未 login / 未起動なら skip し、夜間 run は login window
   を出さず他 source で続行する。`suggest()` は fail-soft (throw せず [])。
 
+### preview-and-route boundary
+
+scope: app
+constitution: none (repo autonomy)
+
+- accept / reject / later は `human_decision` row + channel.status 更新で
+  永続化 (`POST /api/decide`)。再展開は `POST /api/expand` で
+  accepted / seed status の node のみから — candidate のまま再展開しない
+  (2026-09-30, t-01M3NXGJBS)。AI は route しない: judgment は score まで。
+- 再展開された node は status を維持する (upsert の CASE が
+  accepted/rejected/later/seed を sticky にする)。judgment の seed context
+  は常に元の `status='seed'` — 興味基準は viewer profile に紐付く。
+
 ### local store
 
 scope: 全域

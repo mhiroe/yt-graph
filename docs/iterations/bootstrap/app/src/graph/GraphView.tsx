@@ -14,9 +14,19 @@ const COLORS: Record<string, number> = {
 };
 
 /** Minimal Three.js 3D graph: channels on a sphere layout, edges as lines. */
-export function GraphView({ data }: { data: GraphData }) {
+export function GraphView({
+  data,
+  selectedId,
+  onSelect,
+}: {
+  data: GraphData;
+  selectedId?: string | null;
+  onSelect?: (id: string | null) => void;
+}) {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<{ scene: THREE.Scene; group: THREE.Group } | null>(null);
+  const stateRef = useRef({ selectedId, onSelect });
+  stateRef.current = { selectedId, onSelect };
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -31,6 +41,22 @@ export function GraphView({ data }: { data: GraphData }) {
     scene.add(group);
     sceneRef.current = { scene, group };
 
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    const onClick = (ev: MouseEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.set(
+        ((ev.clientX - rect.left) / rect.width) * 2 - 1,
+        -((ev.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(pointer, camera);
+      const hit = raycaster
+        .intersectObjects(group.children)
+        .find((i) => i.object.userData.channelId);
+      stateRef.current.onSelect?.(hit ? (hit.object.userData.channelId as string) : null);
+    };
+    renderer.domElement.addEventListener("click", onClick);
+
     let frame = 0;
     const animate = () => {
       frame = requestAnimationFrame(animate);
@@ -40,6 +66,7 @@ export function GraphView({ data }: { data: GraphData }) {
     animate();
     return () => {
       cancelAnimationFrame(frame);
+      renderer.domElement.removeEventListener("click", onClick);
       renderer.dispose();
       mount.removeChild(renderer.domElement);
     };
@@ -61,6 +88,7 @@ export function GraphView({ data }: { data: GraphData }) {
         radius * Math.cos(phi),
       );
       pos.set(ch.id, v);
+      const selected = ch.id === stateRef.current.selectedId;
       const mesh = new THREE.Mesh(
         new THREE.SphereGeometry(ch.status === "seed" ? 0.9 : 0.5, 16, 16),
         new THREE.MeshBasicMaterial({ color: COLORS[ch.status] ?? COLORS.candidate }),
@@ -68,6 +96,14 @@ export function GraphView({ data }: { data: GraphData }) {
       mesh.position.copy(v);
       mesh.userData.channelId = ch.id;
       ctx.group.add(mesh);
+      if (selected) {
+        const ring = new THREE.Mesh(
+          new THREE.SphereGeometry((ch.status === "seed" ? 0.9 : 0.5) * 1.5, 16, 16),
+          new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true }),
+        );
+        ring.position.copy(v);
+        ctx.group.add(ring);
+      }
     });
     for (const e of data.edges) {
       const a = pos.get(e.src_channel_id);
@@ -76,7 +112,7 @@ export function GraphView({ data }: { data: GraphData }) {
       const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
       ctx.group.add(new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x555555 })));
     }
-  }, [data]);
+  }, [data, selectedId]);
 
-  return <div ref={mountRef} style={{ width: "100%", height: "calc(100vh - 40px)" }} />;
+  return <div ref={mountRef} style={{ flex: 1, minWidth: 0, height: "calc(100vh - 44px)" }} />;
 }

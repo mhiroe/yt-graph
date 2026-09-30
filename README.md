@@ -34,6 +34,9 @@ grow a navigable graph of similar / interesting channels.
 - `cd docs/iterations/bootstrap/app && pnpm install && pnpm dev` starts the
   local API (`:8787`, SQLite at `app/data/yt-graph.sqlite`) and the Vite web UI
   (`:5173`, `/api` proxied to the API).
+- UI loop: enter a seed → `discover` → `judge` → click a node/row to preview →
+  `accept` / `later` / `reject` (persisted to `human_decision`) → `expand` on
+  an accepted node re-runs discovery from it.
 
 ## script / app usage
 

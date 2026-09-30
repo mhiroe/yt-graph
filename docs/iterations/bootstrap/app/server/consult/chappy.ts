@@ -1,8 +1,15 @@
 import { execFile } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { ConsultAdapter, ConsultInput, Suggestion } from "./types.js";
 
 const execFileP = promisify(execFile);
+
+// chappy writes notes/returns under <cwd>/docs/chatgpt — pin it into the
+// gitignored data dir so consult artifacts never dirty the tree.
+const here = dirname(fileURLToPath(import.meta.url));
+const CHAPPY_ROOT = process.env.YTG_CHAPPY_ROOT ?? join(here, "..", "..", "data", "chatgpt");
 
 const MAX_SUGGESTIONS = 5;
 const STATUS_TIMEOUT_MS = 10_000;
@@ -53,7 +60,7 @@ export class ChappyConsult implements ConsultAdapter {
 
   async available(): Promise<boolean> {
     try {
-      const { stdout } = await execFileP("chappy", ["status"], { timeout: STATUS_TIMEOUT_MS });
+      const { stdout } = await execFileP("chappy", ["status", "--root", CHAPPY_ROOT], { timeout: STATUS_TIMEOUT_MS });
       const account = /^\s*account:\s*(.+)$/m.exec(stdout)?.[1]?.trim() ?? "";
       return account.length > 0 && !/^(unavailable|not authenticated|unknown)/.test(account);
     } catch {
@@ -65,7 +72,7 @@ export class ChappyConsult implements ConsultAdapter {
     try {
       const { stdout } = await execFileP(
         "chappy",
-        ["request", buildPrompt(input), "--wait", String(REQUEST_WAIT_SEC)],
+        ["request", buildPrompt(input), "--wait", String(REQUEST_WAIT_SEC), "--root", CHAPPY_ROOT],
         { timeout: REQUEST_TIMEOUT_MS },
       );
       return parseSuggestions(stdout).slice(0, MAX_SUGGESTIONS);

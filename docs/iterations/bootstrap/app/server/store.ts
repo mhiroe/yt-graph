@@ -88,6 +88,27 @@ export function latestJudgments(handle: DatabaseSync = defaultDb): Map<string, J
   return new Map(rows.map((r) => [r.channel_id, r]));
 }
 
+export type Decision = "accept" | "reject" | "later";
+
+const DECISION_STATUS: Record<Decision, string> = {
+  accept: "accepted",
+  reject: "rejected",
+  later: "later",
+};
+
+/** Persist a human routing decision and move the channel status. */
+export function insertDecision(
+  d: { channelId: string; decision: Decision; note?: string },
+  handle: DatabaseSync = defaultDb,
+): void {
+  handle
+    .prepare("insert into human_decision (channel_id, decision, note) values (?, ?, ?)")
+    .run(d.channelId, d.decision, d.note ?? null);
+  handle
+    .prepare("update channel set status = ?, last_seen_at = datetime('now') where id = ?")
+    .run(DECISION_STATUS[d.decision], d.channelId);
+}
+
 /** Channel ids the human already rejected — deterministic cleanup drops re-hits. */
 export function rejectedIds(handle: DatabaseSync = defaultDb): Set<string> {
   const rows = handle
@@ -100,6 +121,9 @@ export type CandidateView = {
   id: string;
   title: string;
   status: string;
+  handle: string | null;
+  description: string | null;
+  url: string | null;
   sources: string[];
   evidence_count: number;
   judgment?: { judge: string; score: number; verdict: string };
@@ -109,16 +133,24 @@ export type CandidateView = {
 export function listCandidates(handle: DatabaseSync = defaultDb): CandidateView[] {
   const rows = handle
     .prepare(
-      `select c.id, c.title, c.status, e.source
+      `select c.id, c.title, c.status, c.handle, c.description, c.url, e.source
        from channel c
        left join discovery_evidence e on e.channel_id = c.id
        order by c.id`,
     )
-    .all() as unknown as { id: string; title: string; status: string; source: string | null }[];
+    .all() as unknown as {
+      id: string; title: string; status: string;
+      handle: string | null; description: string | null; url: string | null;
+      source: string | null;
+    }[];
   const judgments = latestJudgments(handle);
   const byId = new Map<string, CandidateView>();
   for (const r of rows) {
-    const v = byId.get(r.id) ?? { id: r.id, title: r.title, status: r.status, sources: [], evidence_count: 0 };
+    const v = byId.get(r.id) ?? {
+      id: r.id, title: r.title, status: r.status,
+      handle: r.handle, description: r.description, url: r.url,
+      sources: [], evidence_count: 0,
+    };
     if (r.source !== null) {
       v.evidence_count += 1;
       if (!v.sources.includes(r.source)) v.sources.push(r.source);

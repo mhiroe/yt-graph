@@ -111,7 +111,7 @@ pipeline と UI を通す。
 - [done] chappy consult adapter: ChatGPT で candidate 生成 (wall-bounce) ^t-01M3NXGFK7
   - 前提: ContentHub 起動 + chappy main slot の ChatGPT login。未 login なら
     adapter は skip して他 source で続行 (夜間 run を止めない)
-- [ ] graph UI + preview-and-route UX (accept / reject / later 永続化) + ^t-01M3NXGJBS
+- [done] graph UI + preview-and-route UX (accept / reject / later 永続化) + ^t-01M3NXGJBS
       accept node からの再展開
   - UI 系は x-graph 同様の調査画面 (inspection) と adhoc 操作の土台に
     なるよう意識する (user 指示 2026-09-29; PoC では preview/route が
