@@ -43,6 +43,8 @@ grow a navigable graph of similar / interesting channels.
 - `pnpm dev` — run API + web UI together (`scripts/dev.mjs`)
 - `pnpm dev:api` / `pnpm dev:web` — run either side alone
 - `pnpm smoke` — self-contained API boot check (scratch port, in-memory DB)
+- `pnpm accept` — full-loop acceptance (fixture source + heuristic judge +
+  stub consult): discover → judge → preview fields → route → expand
 - `pnpm judge` — discovery → judgment one-pass on a scratch DB
   (`YTG_JUDGE=auto|jev|heuristic`)
 - discovery consult wall-bounce: `YTG_CONSULT=auto|chappy|stub|off`
