@@ -146,6 +146,15 @@ constitution: none (repo autonomy)
   accepted/rejected/later/seed を sticky にする)。judgment の seed context
   は常に元の `status='seed'` — 興味基準は viewer profile に紐付く。
 
+### UI surface visual confirmation
+
+scope: ui
+constitution: none (repo autonomy)
+
+- user 可視の surface (mockup / 視覚変更 / UI 一般) が repo に land
+  したら、user の visual confirmation を取る。提示は bounded return
+  (`judgment: user`) で行う (user ruling 2026-09-30)。
+
 ### local store
 
 scope: 全域
