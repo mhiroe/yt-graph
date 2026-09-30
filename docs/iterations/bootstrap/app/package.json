@@ -12,6 +12,7 @@
     "smoke": "node scripts/smoke.mjs",
     "accept": "node scripts/accept.mjs",
     "probe:source": "tsx scripts/probe-source.ts",
+    "probe:contenthub": "tsx scripts/probe-contenthub.ts",
     "judge": "tsx scripts/run-judge.ts"
   },
   "dependencies": {

@@ -85,6 +85,16 @@ constitution: none (repo autonomy)
   選択は `YTG_SOURCE` env (`fixture` 既定 / `contenthub`)。認証情報を
   要求する実装を pipeline 側に直接書かない (2026-09-29, t-01M3NXG5G2)。
   - `mySubscriptions()` は optional — session を持つ adapter のみが実装する。
+- ContentHub source adapter (t-01M3NXGS3D) は file transport の pure file
+  client (request → `<root>/.transport/outbox/`、response → `inbox/`、
+  drain → `archive/`; contract は ContentHub spec_contenthub_process.md
+  "transport contract")。fail-closed 規約: `owner.json` の pid が live で
+  無ければ envelope を enqueue しない (outbox write は LaunchAgent spawn =
+  window pop を誘発するため)。session gate は `yt.session.check` +
+  `yt.auth.inspect` (両方 live kind) で、未認証なら data kind を出さない。
+  scrape kind 名は ContentHub 側 contract (wish task t-01M3NXZ93F) に揃え、
+  "Unsupported CLI command" 応答は soft-skip (run を止めない)。
+  `yt.auth.action` (対話 kind) は絶対に送らない。
 
 ### discovery funnel boundary
 

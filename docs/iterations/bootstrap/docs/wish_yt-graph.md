@@ -118,7 +118,7 @@ pipeline と UI を通す。
     先行、調査画面・adhoc mode の詳細は spec_product.md scope 参照)
 - [done] acceptance (fixture): 1 seed → candidates → jev → preview → route → ^t-01M3NXGPDT
       expand が 1 周動く
-- [ ] user subscriptions signal (ContentHub session 経由) — **夜間対象外**: ^t-01M3NXGS3D
+- [done] user subscriptions signal (ContentHub session 経由) — **夜間対象外**: ^t-01M3NXGS3D
       ContentHub 側 adapter の到着待ち
   - 旧案 YouTube OAuth (`youtube.readonly`) は 2026-09-28 に不採用 (ContentHub
     session 経路へ切替; 理由は `.agent-state/decision-2026-09-28-readiness.md`)

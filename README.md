@@ -16,8 +16,10 @@ grow a navigable graph of similar / interesting channels.
 
 ## Project overview
 
-- Seed-based channel discovery for your own YouTube account: OAuth sign-in,
-  subscriptions / recommendations as the signal source.
+- Seed-based channel discovery for your own YouTube account: reads happen
+  through a dedicated-account logged-in session inside a ContentHub instance
+  (`YTG_SOURCE=contenthub`); the fixture adapter (`YTG_SOURCE=fixture`,
+  default) needs no credentials.
 - Candidates come from two sources: subscription-graph recommendation and a
   ChatGPT wall-bounce consult via `chappy-cli`.
 - `jev` (local judgment tool) scores and filters out uninteresting candidates;
@@ -45,6 +47,14 @@ grow a navigable graph of similar / interesting channels.
 - `pnpm smoke` — self-contained API boot check (scratch port, in-memory DB)
 - `pnpm accept` — full-loop acceptance (fixture source + heuristic judge +
   stub consult): discover → judge → preview fields → route → expand
+- `pnpm probe:source` — connectivity smoke against the configured source
+  adapter (`YTG_SOURCE=fixture|contenthub`, fixture is the default)
+- `pnpm probe:contenthub` — bounded read-only check against the live
+  ContentHub yt session: `yt.session.check` / `yt.auth.inspect` /
+  `yt.subscriptions.mine`. Fails closed (skips) when the dedicated yt
+  instance is not running or not authenticated. Env: `YTG_CONTENTHUB_ROOT`
+  (transport root override), `YTG_CONTENTHUB_TIMEOUT_MS` (response wait,
+  default 120s)
 - `pnpm judge` — discovery → judgment one-pass on a scratch DB
   (`YTG_JUDGE=auto|jev|heuristic`)
 - discovery consult wall-bounce: `YTG_CONSULT=auto|chappy|stub|off`
