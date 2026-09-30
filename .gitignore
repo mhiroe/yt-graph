@@ -1,3 +1,4 @@
 apm_modules/
 /.workflow.nosync/
 docs/chatgpt/
+.agent-state/
