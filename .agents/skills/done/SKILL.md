@@ -14,9 +14,27 @@ Core at `.agents/workflow-v4/`.
 {"kind":"skill.phase","phase":"done","task":{"component_id":"t-...","state_revision":0},"verification":"<what was run and observed>","operation_prefix":"fin-"}
 ```
 
-Resolve `component_id` / `state_revision` from the `doit` handoff or
-`.agents/workflow-v4/wf4.sh cli` read ops (`document.list_nodes`,
-`mind_wish.list`). Halt on the first non-`applied` disposition.
+Resolve `component_id` from the `doit` handoff or `.agents/workflow-v4/wf4.sh
+cli` read ops (`document.list_nodes`, `mind_wish.list`).
+
+`state_revision` is re-read at send time, not taken from the handoff — the
+handoff value is stale whenever anything applied to the task in between, and a
+stale `expected_revision` is the recurring `task.complete` conflict in the
+retro aggregate. Immediately before sending the request, run
+
+```
+.agents/workflow-v4/wf4.sh revision <task_id>
+```
+
+which prints the task's current `state_revision` (read-only, through `cli`
+read ops), and send the request with that value.
+
+If `task.complete` still returns `conflict` or `rejected`, retry once — never
+more: re-run `wf4.sh revision` and resend the same request with the fresh
+revision and a new `operation_prefix` (e.g. `fin-r1-`; operation ids are
+`${prefix}-${seq}` and must not repeat). A `noop` on the last command means
+the task already holds `done` — the run reports completed and is not a
+failure. Halt on the first non-`applied` disposition otherwise.
 
 ## Bounded evidence
 
@@ -80,15 +98,15 @@ file, handoff note, or the bounded return (user ruling 2026-09-29). Check
 "findings promoted to spec/rule?" before finishing; a finding with no owning
 spec opens a draft wish.
 
-## Retrospective (opt-in)
+## Retrospective (always on)
 
-After the marker is verified, run the per-task retrospective only when it is
-enabled: `.agents/workflow-v4/wf4-retro.sh --enabled` exits 0 when
-`WF4_RETRO=1` or `.workflow/repository.json` sets `"retrospective": true`.
-When enabled, run `wf4-retro.sh <task_id> --write` — `--write` is the default
-invocation so the report lands in the journal under `.workflow.nosync/retro/`;
-drop it only for a dry look. Relay the short report. When disabled, do
-nothing — the check itself must not run.
+After the marker is verified, run the per-task retrospective on every task:
+`.agents/workflow-v4/wf4-retro.sh <task_id> --write`. Emission is
+unconditional — there is no flag or env switch (gm.md:1142; measured cost
+~400 tokens stdout per task, journals are read only by the mechanical
+aggregate). `--write` lands the report in the journal under
+`.workflow.nosync/retro/`; drop it only for a dry look. Relay the short
+report. A retro failure is non-fatal — note it in the return and finish.
 
 ## Wish closure boundary
 

@@ -11,10 +11,10 @@ not fix — fixes go through the normal planner / doit flow as new work.
 
 ## Pipeline
 
-- `done` runs `.agents/workflow-v4/wf4-retro.sh <task_id> --write` when the
-  repo opts in (`WF4_RETRO=1` or `"retrospective": true` in
-  `.workflow/repository.json`). One journal lands per completed task under
-  `.workflow.nosync/retro/journal/<date>/`.
+- `done` runs `.agents/workflow-v4/wf4-retro.sh <task_id> --write` on every
+  completed task — emission is unconditional, no flag or env switch
+  (gm.md:1142). One journal lands
+  per completed task under `.workflow.nosync/retro/journal/<date>/`.
 - `wf4-retro.sh --aggregate` folds journals since `.journal-cursor` into
   `retro/ledger.md` — run it per repo for the periodic pass.
 - `.agents/workflow-v4/wf4-retro-scan.sh` is the cross-repo collector used

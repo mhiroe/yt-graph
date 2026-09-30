@@ -14,8 +14,9 @@
 #
 # Repo discovery: <scan_root>/*/ with .agents/workflow.toml declaring
 # `version = 4`. scan_root defaults to $WF4_RETRO_SCAN_ROOT or ~/Documents.
-# Explicit repo_root args are added on top. Repos whose retrospective flag is
-# off (wf4-retro.sh --enabled fails) are listed but not scanned.
+# Explicit repo_root args are added on top. Journal emission is
+# unconditional (gm.md:1142) — every discovered v4 repo is scanned; the old
+# retrospective flag machinery is gone.
 #
 # State file for poll/watch: .workflow.nosync/retro/.scan-seen under the
 # invoking repo root (WF4_ROOT / git toplevel / cwd); first poll seeds the
@@ -27,13 +28,6 @@ scan_root="${WF4_RETRO_SCAN_ROOT:-$HOME/Documents}"
 big_trans_kb=2048
 
 die() { echo "wf4-retro-scan: $*" >&2; exit 2; }
-
-retro_enabled() {
-  [ "${WF4_RETRO:-}" = "1" ] && return 0
-  python3 -c 'import json,sys
-try: sys.exit(0 if json.load(open(sys.argv[1])).get("retrospective") else 1)
-except Exception: sys.exit(1)' "$1/.workflow/repository.json" 2>/dev/null
-}
 
 discover_repos() {
   local d
@@ -127,11 +121,10 @@ repos=$( { discover_repos; printf '%s\n' "${extra_roots[@]:-}" | grep . || true;
 state_dir_root="${WF4_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 state_file="${WF4_RETRO_SCAN_STATE:-$state_dir_root/.workflow.nosync/retro/.scan-seen}"
 
-new_journals() { # prints "repo|journal_path" for enabled repos
+new_journals() { # prints "repo|journal_path" for every discovered repo
   local repo
   while IFS= read -r repo; do
     [ -n "$repo" ] || continue
-    retro_enabled "$repo" || continue
     journals_of "$repo" | sed "s|^|$repo\||"
   done <<EOF_REPOS
 $repos
@@ -179,13 +172,9 @@ fi
 printf '%s\n' "$repos" | while IFS= read -r repo; do
   [ -n "$repo" ] || continue
   name=${repo##*/}
-  if ! retro_enabled "$repo"; then
-    echo "== $name  retro=off"
-    continue
-  fi
   js=$(journals_of "$repo")
   n=$(printf '%s\n' "$js" | grep -c . || true)
-  echo "== $name  retro=on  journals=$n"
+  echo "== $name  journals=$n"
   [ -n "$js" ] || continue
   if [ "$limit" -gt 0 ]; then
     js=$(printf '%s\n' "$js" | tail -"$limit")

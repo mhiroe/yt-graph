@@ -5,6 +5,10 @@
 # usage:
 #   wf4.sh provision <repository-id>   write .workflow/repository.json and create the
 #                                      device-local DB under .workflow.nosync/
+#   wf4.sh revision <component_id>     print the component's CURRENT state_revision —
+#                                      a fresh read through `cli` read ops. done runs
+#                                      this right before task.complete so a stale
+#                                      handoff revision does not surface as conflict
 #   wf4.sh '<request-json>'            run a skill.phase / wish.complete /
 #                                      wish.transition request via
 #                                      src/harness/skill_entry.ts (adds --allow-run)
@@ -42,6 +46,18 @@ repository_id() {
   printf '%s\n' "$id"
 }
 
+# One request through src/cli/main.ts. stdout carries the single JSON response
+# line; diagnostics stay on stderr; the exit code is the CLI's.
+run_cli() {
+  local repo_id
+  repo_id=$(repository_id)
+  deno run --allow-read --allow-write --allow-ffi --allow-env \
+    "$runtime_dir/src/cli/main.ts" \
+    --repository-id "$repo_id" --device-id "$device" \
+    --db "$db" --root "$root" \
+    --request "$1"
+}
+
 case "${1:-}" in
   provision)
     repo_id="${2:-}"
@@ -61,17 +77,58 @@ case "${1:-}" in
       echo "usage: wf4.sh cli '<request-json>'" >&2
       exit 2
     fi
-    repo_id=$(repository_id)
-    exec deno run --allow-read --allow-write --allow-ffi --allow-env \
-      "$runtime_dir/src/cli/main.ts" \
-      --repository-id "$repo_id" --device-id "$device" \
-      --db "$db" --root "$root" \
-      --request "$request"
+    run_cli "$request"
+    ;;
+  revision)
+    component_id="${2:-}"
+    if [ -z "$component_id" ]; then
+      echo "usage: wf4.sh revision <component_id>" >&2
+      exit 2
+    fi
+    command -v python3 >/dev/null 2>&1 || {
+      echo "wf4 revision: python3 is required" >&2
+      exit 1
+    }
+    # The current state_revision is the newest applied operation's resulting
+    # revision: operation.list (newest first, target-side) -> get_receipt ->
+    # state_revision. Creation ops (component.register / task.create_planned)
+    # record the new component as the RESULT, not the target, so a component
+    # with no applied op targeting it is still at revision 0.
+    op_id=$(run_cli \
+      "{\"kind\":\"operation.list\",\"component_id\":\"$component_id\",\"limit\":500}" \
+      | python3 -c '
+import json, sys
+resp = json.load(sys.stdin)
+if not resp.get("ok"):
+    sys.stderr.write("wf4 revision: operation.list failed: %s\n" % (resp.get("error") or resp))
+    sys.exit(1)
+for op in (resp.get("result") or {}).get("operations") or []:
+    if op.get("disposition") == "applied":
+        sys.stdout.write(op["operation_id"] + "\n")
+        break
+') || exit 1
+    if [ -z "$op_id" ]; then
+      echo 0
+      exit 0
+    fi
+    run_cli "{\"kind\":\"operation.get_receipt\",\"operation_id\":\"$op_id\"}" \
+      | python3 -c '
+import json, sys
+resp = json.load(sys.stdin)
+if not resp.get("ok"):
+    sys.stderr.write("wf4 revision: operation.get_receipt failed: %s\n" % (resp.get("error") or resp))
+    sys.exit(1)
+rev = (resp.get("result") or {}).get("state_revision")
+if rev is None:
+    sys.stderr.write("wf4 revision: applied receipt carries no state_revision\n")
+    sys.exit(1)
+sys.stdout.write("%s\n" % rev)
+' || exit 1
     ;;
   *)
     request="${1:-}"
     if [ -z "$request" ]; then
-      echo "usage: wf4.sh provision <repository-id> | wf4.sh '<request-json>' | wf4.sh cli '<request-json>'" >&2
+      echo "usage: wf4.sh provision <repository-id> | wf4.sh revision <component_id> | wf4.sh '<request-json>' | wf4.sh cli '<request-json>'" >&2
       exit 2
     fi
     repo_id=$(repository_id)

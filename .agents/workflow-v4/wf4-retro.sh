@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # wf4-retro — per-task retrospective report for workflow v4 (prototype).
 #
-# usage: wf4-retro.sh <task_id> [--write] | --enabled | --aggregate
+# usage: wf4-retro.sh <task_id> [--write] | --aggregate
 #
 # --aggregate folds journal entries written since .journal-cursor into
 # retro/ledger.md (record-now / aggregate-later per the v4 retro design).
@@ -24,22 +24,20 @@
 #   .workflow.nosync/retro/residue.exclude  — device-local standing WIP
 #   WF4_RETRO_RESIDUE_EXCLUDE               — one extra pattern
 #
-# Opt-in only: nothing calls this automatically; the done skill runs it when
-# `wf4-retro.sh --enabled` succeeds (WF4_RETRO=1 or "retrospective": true in
-# .workflow/repository.json). All reads are local. Degrades to "unavailable"
-# per check.
+# Journal emission is unconditional (gm.md:1142): the done skill runs
+# `wf4-retro.sh <task_id> --write` on every completed task — measured cost
+# ~1.6KB stdout (~400 tokens) per task, journal bodies are read only by the
+# mechanical aggregate, never by agents. There is no on/off switch: the
+# "retrospective" repository.json flag and the WF4_RETRO* env knobs were
+# removed rather than inverted. `--enabled` survives only as a deprecated
+# stub that always exits 0, so skill text deployed before the removal keeps
+# working during rollout — new callers must not use it.
+# All reads are local. Degrades to "unavailable" per check.
 set -euo pipefail
 
+# deprecated compat stub for pre-removal done skill text
 if [ "${1:-}" = "--enabled" ]; then
-  [ "${WF4_RETRO:-}" = "1" ] && exit 0
-  root="${WF4_ROOT:-}"
-  if [ -z "$root" ]; then
-    root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-  fi
-  python3 -c 'import json,sys
-try: sys.exit(0 if json.load(open(sys.argv[1])).get("retrospective") else 1)
-except Exception: sys.exit(1)' "$root/.workflow/repository.json" 2>/dev/null && exit 0
-  exit 1
+  exit 0
 fi
 
 # --- aggregate: journal diff since cursor -> ledger.md -----------------------
@@ -117,7 +115,7 @@ EOF_ENTRIES
 fi
 
 task_id="${1:-}"
-[ -n "$task_id" ] || { echo "usage: wf4-retro.sh <task_id> [--write] | --enabled | --aggregate" >&2; exit 2; }
+[ -n "$task_id" ] || { echo "usage: wf4-retro.sh <task_id> [--write] | --aggregate" >&2; exit 2; }
 write=0
 [ "${2:-}" = "--write" ] && write=1
 
