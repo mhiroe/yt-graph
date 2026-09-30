@@ -110,6 +110,19 @@ constitution: none (repo autonomy)
   distinctiveness。verdict threshold (pass >=0.5 / review >=0.3) は
   `verdictFor` 一か所に集約する。
 
+### consult adapter seam
+
+scope: adapters
+constitution: none (repo autonomy)
+
+- ChatGPT wall-bounce は `server/consult/` の `ConsultAdapter` interface
+  越しのみ。選択は `YTG_CONSULT` env (`auto` 既定 / `chappy` / `stub` /
+  `off`)。suggestion の channel 解決は必ず source adapter の search 経由 —
+  consult 自体は YouTube アクセスを持たない (2026-09-30, t-01M3NXGFK7)。
+- `available()` は `chappy status` の account 行を見るだけで ContentHub を
+  spawn しない — 未 login / 未起動なら skip し、夜間 run は login window
+  を出さず他 source で続行する。`suggest()` は fail-soft (throw せず [])。
+
 ### local store
 
 scope: 全域

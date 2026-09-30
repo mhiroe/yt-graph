@@ -42,6 +42,8 @@ grow a navigable graph of similar / interesting channels.
 - `pnpm smoke` — self-contained API boot check (scratch port, in-memory DB)
 - `pnpm judge` — discovery → judgment one-pass on a scratch DB
   (`YTG_JUDGE=auto|jev|heuristic`)
+- discovery consult wall-bounce: `YTG_CONSULT=auto|chappy|stub|off`
+  (auto = chappy when `chappy status` shows a signed-in account)
 - `pnpm lint` — `tsc --noEmit` typecheck (thin lint until a real linter lands)
 - `pnpm build` — typecheck + `vite build`
 

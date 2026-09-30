@@ -3,6 +3,7 @@ import type { SourceAdapter, SourceChannel } from "../sources/index.js";
 import { db as defaultDb } from "../db.js";
 import { fingerprintFromTitles } from "./fingerprint.js";
 import { cleanup, type RawHit } from "./cleanup.js";
+import { createConsultAdapter, type ConsultAdapter } from "../consult/index.js";
 import { insertEdge, insertEvidence, insertSnapshot, rejectedIds, upsertChannel } from "../store.js";
 
 export type DiscoveryResult = {
@@ -15,6 +16,9 @@ export type DiscoveryResult = {
 
 /** Max search queries per expansion — search stays a minor path (quota law). */
 const MAX_SEARCH_QUERIES = 2;
+/** Consult suggestions resolved per pass, and search hits taken per suggestion. */
+const MAX_CONSULT_SUGGESTIONS = 5;
+const MAX_CONSULT_HITS = 2;
 
 /**
  * One expansion pass: seed fingerprint -> adapter surfaces -> merge hits with
@@ -24,6 +28,7 @@ export async function runDiscovery(
   adapter: SourceAdapter,
   seedRef: string,
   handle: DatabaseSync = defaultDb,
+  consult: ConsultAdapter = createConsultAdapter(),
 ): Promise<DiscoveryResult> {
   const seed = await adapter.resolveChannel(seedRef);
   if (!seed) throw new Error(`seed not resolved: ${seedRef}`);
@@ -69,6 +74,17 @@ export async function runDiscovery(
   for (const q of new Set(queries)) {
     for (const ch of await adapter.searchChannels(q)) {
       add(ch, "search", { query: q });
+    }
+  }
+
+  // Surface 4: consult wall-bounce (ChatGPT via chappy / stub) — fail-soft.
+  // The consult never resolves channels itself; suggestions go through the
+  // source adapter's search so provenance stays uniform.
+  if (await consult.available()) {
+    for (const s of (await consult.suggest({ seed, fingerprint })).slice(0, MAX_CONSULT_SUGGESTIONS)) {
+      for (const ch of (await adapter.searchChannels(s.query)).slice(0, MAX_CONSULT_HITS)) {
+        add(ch, consult.name, { query: s.query, rationale: s.rationale });
+      }
     }
   }
 
