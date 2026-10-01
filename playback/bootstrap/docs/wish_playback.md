@@ -43,6 +43,22 @@ iteration_created: 2026-09-30T15:58:11.354Z
     公式 channel の seed list。curation 済みではない — accept/reject は
     人の route)。
 
+## 追加 direction (user 2026-09-30 — 実装形態の可能性)
+
+- ユーザーは別途、dokoitsu 側へ**ペアレンタルコントロール付きの
+  視聴アプリ**を依頼している。そのアプリのベースは ul-browser で、
+  その中で YouTube 視聴機能を再構築する可能性がある。
+- その場合、この playback client は**独立 client ではなく機能群**
+  (curated feed / limits+lock / points gate / rhythm) として統合される
+  可能性が高い —「client はそこと統合する可能性、つまり機能だけと
+  なる可能性」(user verbatim 趣旨)。作り方は user が考え中。
+- 統合先の表示面: 登録 channel + yt-graph の探索 recommendation を
+  出す。加えて TVer (tvtokyo 等) のコンテンツも時間制限付きで視る
+  構想。
+- よって yt-graph 側では**この web アプリを mockup として作り続けて
+  よい** (user 2026-09-30) — 実機が ul-browser 側に移っても、機能・
+  UX の検証器としての役割は残る。separable component 方針は変わらず。
+
 ## scope (bootstrap iteration)
 
 - component skeleton / app scaffold (`playback/bootstrap/app`) —
@@ -81,7 +97,7 @@ iteration_created: 2026-09-30T15:58:11.354Z
 
 ## task 分解
 
-- [ ] component skeleton / app scaffold: separable playback/bootstrap/app (own pnpm + Vite + React + TS entry、yt-graph core への依存は interface seam のみ) ^t-01M3SGQWVC
+- [done] component skeleton / app scaffold: separable playback/bootstrap/app (own pnpm + Vite + React + TS entry、yt-graph core への依存は interface seam のみ) ^t-01M3SGQWVC
 - [ ] curated channel feed: yt-graph 採用 channel set を読む (export seam t-01M3RZVVED を consume — 未着の間は fixture で fail-soft) ^t-01M3SGR0AW
 - [ ] playback surface: ul-browser 優先の動画再生面 (fallback は ContentHub webview / yt-client embed、adapter seam) ^t-01M3SGR2FY
 - [ ] viewing limits + parental lock: 視聴 limit の設定・強制と親ロック (親 unlock 無しに limit 変更不可) ^t-01M3SGR5HF

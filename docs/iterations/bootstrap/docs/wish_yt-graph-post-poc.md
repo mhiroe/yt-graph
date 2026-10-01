@@ -66,6 +66,19 @@ readiness 対象外 → planner で新 task 化 + readiness QUESTION を gm へ
 - [ ] Curiosity Profile adapter seam: dokoitsu 供給想定の fail-soft seam ^t-01M3RZVV3E
 - [ ] adopted-channel export seam: 別 repo 再生 client への curated surface 契約 ^t-01M3RZVVED
 
+## user direction 2026-09-30 — discovery UX の可能性
+
+- yt-graph の web アプリは **mockup として作り続けてよい** (user
+  2026-09-30) — 実 playback client が ul-browser 側に統合される可能性
+  があっても、探索 UX の検証器として継続。
+- swipe / route UX: Tinder のように候補をスライドして
+  好き / 嫌い を振り分ける形がよい (preview-and-route の進化形)。
+- YouTube search との連動、候補の preview、keyword 入力 +
+  keyword ストック — yt-graph の探索と組み合わせて次の興味を
+  見つける形。
+- 探索で育った graph 自体が見えると面白い (探索 graph の可視化を
+  inspection 面として)。
+
 ## open questions
 
 - 新 scope (inspection UI / adhoc mode / discovery expansion 各 task)
