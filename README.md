@@ -39,6 +39,11 @@ grow a navigable graph of similar / interesting channels.
 - UI loop: enter a seed → `discover` → `judge` → click a node/row to preview →
   `accept` / `later` / `reject` (persisted to `human_decision`) → `expand` on
   an accepted node re-runs discovery from it.
+- Playback component (separable, extraction-ready) lives at
+  `playback/bootstrap/app/` — its own pnpm package with no imports into the
+  core app; external integrations go through fail-soft adapter seams
+  (`src/seams/`). `cd playback/bootstrap/app && pnpm install && pnpm dev`
+  serves its web UI on `:5174`; `pnpm smoke` exercises the seams.
 
 ## script / app usage
 
@@ -84,3 +89,5 @@ grow a navigable graph of similar / interesting channels.
    live adapters; the fixture adapter path needs no credentials.
 2. `cd docs/iterations/bootstrap/app && pnpm install`
 3. `pnpm dev` → open http://localhost:5173
+4. playback app (optional): `cd playback/bootstrap/app && pnpm install`,
+   `pnpm dev` → open http://localhost:5174
