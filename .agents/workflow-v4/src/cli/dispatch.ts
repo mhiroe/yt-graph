@@ -79,6 +79,7 @@ import {
   currentLinkPath,
   iterationDirOf,
   type IterationFsPort,
+  type IterationHistoryPort,
   type IterationInfo,
   type IterationProperties,
   iterationPropertiesOf,
@@ -87,6 +88,7 @@ import {
   parseIterationScope,
   planIterationRebuild,
   readIterationProperties,
+  type ReconstructedIteration,
   relativeSymlinkTarget,
   validateComponentPath,
   validateIterationLabel,
@@ -250,6 +252,14 @@ export type CliPorts = {
    * 環境では fs 側を飛ばして `iteration.repair` で後追いできる。
    */
   readonly iteration_fs?: IterationFsPort;
+  /**
+   * iteration.repair の first-commit metadata 口 (0.24.0-era recipe)。
+   * `cli/main.ts` が `createGitIterationHistory(root)` で注入する。
+   *
+   * **未注入なら stamp を持たない iteration の復元は従来どおり fail closed** —
+   * seq / created_at を invent しない。
+   */
+  readonly iteration_history?: IterationHistoryPort;
 };
 
 function failure(kind: string, error: WorkflowError, exit: CliExitCode): CliResponse {
@@ -1655,9 +1665,11 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
         const report = bindAnchors(ports.store, ports.projection, scan);
         return {
           kind,
-          ok: report.errors.length === 0,
-          // 途中で失敗した anchor が残る結果を「片付いた」と返さない。
-          exit_code: report.errors.length === 0 ? CLI_EXIT_OK : CLI_EXIT_NOT_APPLIED,
+          ok: report.verdict === "ok",
+          // required anchor が欠けた結果を「片付いた」と返さない (duplicate のような
+          // finding 側の skip も verdict=partial で exit 非 0)。findings / errors は
+          // 失敗 verdict でも result に全部残る — exit 非 0 は情報喪失ではない。
+          exit_code: report.verdict === "ok" ? CLI_EXIT_OK : CLI_EXIT_NOT_APPLIED,
           result: { ...report, unreadable, scan_errors: scan.errors },
         };
       }
@@ -2026,6 +2038,7 @@ function repairIterations(
 ): CliResponse {
   const warnings: string[] = [];
   const repaired: Record<string, unknown>[] = [];
+  const reconstructed: ReconstructedIteration[] = [];
   const repositoryId = ports.store.context.repository_id;
   let changed = false;
 
@@ -2061,6 +2074,7 @@ function repairIterations(
         scan: scanned.value,
         files,
         componentPaths: new Set(componentDocumentPaths(ports.store.driver).keys()),
+        ...(ports.iteration_history === undefined ? {} : { history: ports.iteration_history }),
       });
     if (!outcome.ok) {
       return {
@@ -2076,6 +2090,9 @@ function repairIterations(
       };
     }
     warnings.push(...outcome.warnings);
+    // stamp を持たない iteration を first-commit metadata から復元した記録 —
+    // disclosure として result に残す (ul-browser 2026-09-30 手動 recipe の実装化)。
+    for (const entry of outcome.reconstructed) reconstructed.push(entry);
     const applied = applyIterationRebuild(
       ports.store.driver,
       outcome.plan,
@@ -2164,6 +2181,7 @@ function repairIterations(
       repository_id: repositoryId,
       disposition: changed ? "applied" : "noop",
       rebuilt,
+      reconstructed,
       repaired,
       frontmatter_stamped: stamped,
       warnings,

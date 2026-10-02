@@ -119,6 +119,9 @@ export type DoneInput = {
   readonly task: { readonly component_id: ComponentId; readonly state_revision: Revision };
   /** 実行した検証。`task.complete` の payload と activity に残る。 */
   readonly verification?: string;
+  /** 与えられれば `task.complete` の直前に `session.attach` activity を追記する
+      (doit 側で記録されなかったケースの fallback — retro の transcript 解決用)。 */
+  readonly session?: SessionAttachment;
   readonly correlation_id?: string;
 };
 
@@ -244,7 +247,7 @@ function planDoit(input: DoitInput): Result<SkillPlan> {
   // transcript を辿る唯一の決定的な手がかり)。activity は state を進めないので
   // expected_revision は付けない — 並走する無関係な更新で落とさない。
   if (input.session !== undefined) {
-    const detail: Record<string, string> = {};
+    const detail: Record<string, string> = { via: "doit" };
     if (input.session.session_id !== undefined) detail.session_id = input.session.session_id;
     if (input.session.agent !== undefined) detail.agent = input.session.agent;
     if (input.session.pane !== undefined) detail.pane = input.session.pane;
@@ -282,18 +285,41 @@ function planDoit(input: DoitInput): Result<SkillPlan> {
  */
 function planDone(input: DoneInput): Result<SkillPlan> {
   const correlation = input.correlation_id;
+  const commands: PlannedCommand[] = [];
+  // session.attach fallback: doit の plan が start_doing 不適用で止まると
+  // attach が出ない (anchor 未整備で raw start_doing を再送する運用がある)。
+  // done で session が渡ればここで記録する — retro が transcript を辿る
+  // 最後の機会である。doit で記録済みでも重複は無害 (retro は最古の attach
+  // = 実行者を読む)。activity.append は state_revision を消費せず常に
+  // applied なので、後続の task.complete の expected_revision を狂わせない。
+  if (input.session !== undefined) {
+    const detail: Record<string, string> = { via: "done" };
+    if (input.session.session_id !== undefined) detail.session_id = input.session.session_id;
+    if (input.session.agent !== undefined) detail.agent = input.session.agent;
+    if (input.session.pane !== undefined) detail.pane = input.session.pane;
+    commands.push({
+      operation: "activity.append",
+      target_id: input.task.component_id,
+      payload: {
+        activity_type: "session.attach",
+        detail,
+      },
+      why: "実行 session の記録 (doit で記録されなかった場合の retro 用 fallback)",
+    });
+  }
+  commands.push({
+    operation: "task.complete",
+    target_id: input.task.component_id,
+    expected_revision: input.task.state_revision,
+    payload: {
+      ...(input.verification === undefined ? {} : { verification: input.verification }),
+      ...(correlation === undefined ? {} : { correlation_id: correlation }),
+    },
+    why: "Task を完了し、検証内容を activity に残す",
+  });
   return ok({
     phase: "done",
-    commands: [{
-      operation: "task.complete",
-      target_id: input.task.component_id,
-      expected_revision: input.task.state_revision,
-      payload: {
-        ...(input.verification === undefined ? {} : { verification: input.verification }),
-        ...(correlation === undefined ? {} : { correlation_id: correlation }),
-      },
-      why: "Task を完了し、検証内容を activity に残す",
-    }],
+    commands,
     // 締め処理 (work_log 追記、task node の state) は docs 側の変更である。
     mutation_scope: "docs_only",
     mutation_scope_after: "docs_only",

@@ -339,14 +339,17 @@ fi
 residue_n=$(printf '%s\n' "$residue_paths" | grep -c . || true)
 
 # --- session + transcript (best-effort) -------------------------------------
-# Source: session.attach activity rows recorded by doit after task.start_doing.
+# Source: session.attach activity rows — doit appends one right after
+# task.start_doing applies; done appends one as fallback for tasks whose
+# doit attach never landed. Earliest row wins: the doer, not a later
+# completer, owns the transcript.
 # The wishboard relay links / v3 activity fallback was removed 2026-09-24 when
 # .wishboard/cache and docs/activity were physically deleted from wishboard.
 session_id=""; session_agent=""; session_pane=""
 session_row=$(sqlite3 "$db" \
   "SELECT detail_json FROM activities
     WHERE component_id='$task_id' AND activity_type='session.attach'
-    ORDER BY created_at DESC LIMIT 1" 2>/dev/null || true)
+    ORDER BY created_at ASC LIMIT 1" 2>/dev/null || true)
 if [ -n "$session_row" ]; then
   eval "$(printf '%s' "$session_row" | python3 -c '
 import json,sys
@@ -356,10 +359,39 @@ print("session_id=%r" % (d.get("session_id") or ""))
 print("session_agent=%r" % (d.get("agent") or ""))
 print("session_pane=%r" % (d.get("pane") or ""))' 2>/dev/null || true)"
 fi
+# Fallback: no attach row at all (task closed before auto-attach, or doit/done
+# ran outside wf4.sh). Resolve the calling pane the way wf4.sh does. The
+# canonical --write caller is the done flow, so this IS the task.done session;
+# the (done-time) tag marks that provenance — on a manual dry-run of an old
+# task it is the reporting session, never silently the doer's. Partial attach
+# rows are NOT filled: a completer's session_id must not overwrite the doer's
+# absent one. Resolution failure leaves the fields empty -> "? ? unrecorded".
+session_via=""
+if [ -z "$session_row" ]; then
+  herdr_bin=""
+  if command -v herdr >/dev/null 2>&1; then
+    herdr_bin="herdr"
+  elif [ -n "${HERDR_BIN_PATH:-}" ] && [ -x "$HERDR_BIN_PATH" ]; then
+    herdr_bin="$HERDR_BIN_PATH"
+  elif [ -x "$HOME/.local/bin/herdr" ]; then
+    herdr_bin="$HOME/.local/bin/herdr"
+  fi
+  if [ -n "$herdr_bin" ]; then
+    eval "$("$herdr_bin" pane current 2>/dev/null | python3 -c '
+import json,sys
+try: p=(json.load(sys.stdin).get("result") or {}).get("pane") or {}
+except Exception: p={}
+sid=(p.get("agent_session") or {}).get("value")
+print("session_id=%r" % (sid if isinstance(sid,str) else ""))
+print("session_agent=%r" % (p.get("agent") if isinstance(p.get("agent"),str) else ""))
+print("session_pane=%r" % (p.get("pane_id") if isinstance(p.get("pane_id"),str) else ""))' 2>/dev/null || true)"
+    [ -n "$session_pane$session_agent$session_id" ] && session_via="done-time"
+  fi
+fi
 tr_stats="unavailable"
 if [ -n "$session_id" ]; then
   tr_file=$(find "$HOME/.claude/projects" "$HOME/.codex/sessions" \
-    -name "*$session_id*" -type f 2>/dev/null | head -1)
+    -name "*$session_id*" -type f 2>/dev/null | head -1 || true)
   if [ -n "$tr_file" ]; then
     tr_stats=$(python3 - "$tr_file" <<'PY' 2>/dev/null || echo "unavailable"
 import json, sys
@@ -439,7 +471,7 @@ if [ "$own_n" -gt 0 ] || [ "$excl_n" -gt 0 ]; then
   suppressed=" (task-own/excluded suppressed: $own_n/$excl_n)"
 fi
 echo "residue: $residue_n dirty path(s)${residue_paths:+: $(printf '%s\n' "$residue_paths" | head -8 | tr '\n' ' ')}$suppressed"
-echo "session: ${session_pane:-?} ${session_agent:-?} ${session_id:-unrecorded}"
+echo "session: ${session_pane:-?} ${session_agent:-?} ${session_id:-unrecorded}${session_via:+ ($session_via)}"
 echo "transcript: $tr_stats"
 echo "change candidate:"
 echo "  (fill in during aggregate pass — journal holds the record)"

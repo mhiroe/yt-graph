@@ -14,11 +14,13 @@ import {
   realpathSync as realpathSyncNode,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 import { err, ok, type Result } from "../result.ts";
 import {
+  ITERATION_LABEL_PATTERN,
   ITERATION_SKELETON_DIRS,
   type IterationActiveFact,
   type IterationCurrentFact,
@@ -26,6 +28,7 @@ import {
   type IterationFsPort,
   type IterationMemberFact,
   type IterationTreeScan,
+  RESERVED_ITERATION_LABELS,
 } from "../iterations.ts";
 
 /**
@@ -129,7 +132,11 @@ export function createFsIterationPort(root: string): IterationFsPort {
         );
       }
       for (const sub of ITERATION_SKELETON_DIRS) {
-        mkdirSync(join(resolved.value, sub));
+        const subPath = join(resolved.value, sub);
+        mkdirSync(subPath);
+        // git は空 dir を commit しない — marker を置いて skeleton が
+        // committed tree から落ちないようにする (0.24.0-era repair defect)。
+        writeGitkeepIfEmpty(subPath);
       }
       return ok({ created: true });
     },
@@ -231,9 +238,13 @@ export function createFsIterationPort(root: string): IterationFsPort {
       let created = false;
       for (const sub of ITERATION_SKELETON_DIRS) {
         const subPath = join(resolved.value, sub);
-        if (existsSync(subPath)) continue;
-        mkdirSync(subPath);
-        created = true;
+        if (!existsSync(subPath)) {
+          mkdirSync(subPath);
+          created = true;
+        }
+        // 空のまま残っている subdir にも marker を補う (0.24.0-era 由来の dir が
+        // 次の commit で再び消えないよう、 repair 時に自浄させる)。
+        created = writeGitkeepIfEmpty(subPath) || created;
       }
       return ok({ created });
     },
@@ -290,13 +301,51 @@ export function createFsIterationPort(root: string): IterationFsPort {
           const skeleton = ITERATION_SKELETON_DIRS.filter((sub) =>
             existsSync(join(entryAbs, sub)) && !isLink(join(entryAbs, sub))
           );
-          if (skeleton.length > 0 && relative !== "") {
+          // 0.24.0-era repair defect: git は空 dir を commit しないので skeleton
+          // subdir が全部欠けた iteration dir が在り得る。`docs/iterations/` の
+          // 直下は project iteration の canonical 置き場なので skeleton が無くても
+          // dir fact として報告する (iteration 確定は anchor 側の仕事)。
+          if ((skeleton.length > 0 || relative === "docs/iterations") && relative !== "") {
             shapeDirs.push(entryRel);
             dirs.push({ dir: entryRel, skeleton });
           }
         }
       };
       walk(rootReal, "");
+
+      // skeleton を欠く dir の第二検出経路: committed `active/<label>` /
+      // `current` link の target が tree に存在するなら dir fact に足す。
+      // link は git が運ぶので dir 側が痩せても残る (0.24.0-era defect のもう一方)。
+      const reported = new Set(dirs.map((fact) => fact.dir));
+      const addLinkTargetDir = (target: string | undefined): void => {
+        if (target === undefined || reported.has(target)) return;
+        const name = target.split("/").pop() ?? "";
+        if (
+          !ITERATION_LABEL_PATTERN.test(name) ||
+          (RESERVED_ITERATION_LABELS as readonly string[]).includes(name)
+        ) {
+          return;
+        }
+        const abs = join(rootReal, target);
+        if (!existsSync(abs) || isLink(abs)) return;
+        const skeleton = ITERATION_SKELETON_DIRS.filter((sub) =>
+          existsSync(join(abs, sub)) && !isLink(join(abs, sub))
+        );
+        reported.add(target);
+        shapeDirs.push(target);
+        dirs.push({ dir: target, skeleton });
+      };
+      for (const fact of actives) {
+        if (fact.invalid || fact.target === undefined) continue;
+        // `<p>/active/<label>` -> `<p>/<label>` の形だけ (他 tool の active dir を拾わない)。
+        const linkName = fact.link.split("/").pop() ?? "";
+        if (fact.target.split("/").pop() !== linkName) continue;
+        addLinkTargetDir(fact.target);
+      }
+      for (const fact of currents) {
+        if (fact.invalid || fact.target === undefined) continue;
+        addLinkTargetDir(fact.target);
+      }
 
       // skeleton subdir 直下の symlink = member link 候補。
       for (const dir of shapeDirs) {
@@ -318,6 +367,17 @@ export function createFsIterationPort(root: string): IterationFsPort {
       return ok({ dirs, currents, actives, members });
     },
   };
+}
+
+/**
+ * 空の dir に `.gitkeep` marker を置く。置いたら true。git は空 dir を commit
+ * しないので、skeleton subdir が無内容のまま残ると次の commit で committed tree
+ * から落ちる (0.24.0-era repair defect の再発防止)。
+ */
+function writeGitkeepIfEmpty(absDir: string): boolean {
+  if (readdirSync(absDir).length > 0) return false;
+  writeFileSync(join(absDir, ".gitkeep"), "");
+  return true;
 }
 
 function lstatSyncSafe(path: string) {

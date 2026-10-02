@@ -11,7 +11,11 @@
 #                                      handoff revision does not surface as conflict
 #   wf4.sh '<request-json>'            run a skill.phase / wish.complete /
 #                                      wish.transition request via
-#                                      src/harness/skill_entry.ts (adds --allow-run)
+#                                      src/harness/skill_entry.ts (adds --allow-run).
+#                                      doit requests without a `session` get the
+#                                      calling herdr pane injected best-effort so
+#                                      session.attach is recorded for retro
+#                                      transcript resolution.
 #   wf4.sh cli '<request-json>'        run a raw src/cli/main.ts request (read ops etc.)
 #
 # root:   $WF4_ROOT, else `git rev-parse --show-toplevel`, else pwd
@@ -51,7 +55,9 @@ repository_id() {
 run_cli() {
   local repo_id
   repo_id=$(repository_id)
-  deno run --allow-read --allow-write --allow-ffi --allow-env \
+  # --allow-run: iteration.repair の first-commit reconstruction が git log を
+  # spawn する (port 未注入環境では従来どおり fail closed)。
+  deno run --allow-read --allow-write --allow-ffi --allow-env --allow-run \
     "$runtime_dir/src/cli/main.ts" \
     --repository-id "$repo_id" --device-id "$device" \
     --db "$db" --root "$root" \
@@ -130,6 +136,55 @@ sys.stdout.write("%s\n" % rev)
     if [ -z "$request" ]; then
       echo "usage: wf4.sh provision <repository-id> | wf4.sh revision <component_id> | wf4.sh '<request-json>' | wf4.sh cli '<request-json>'" >&2
       exit 2
+    fi
+    # Best-effort session attach: a doit/done request without an explicit
+    # `session` gets the calling herdr pane injected so the runtime appends
+    # the `session.attach` activity (the retrospective's transcript link).
+    # done covers tasks whose doit attach was skipped — e.g. a start_doing
+    # resubmit after minting the ^t- anchor halts the original doit plan
+    # before its attach command. A caller-supplied `session` is never
+    # overridden; outside herdr (or on any resolution failure) the request
+    # passes through unchanged.
+    if command -v python3 >/dev/null 2>&1; then
+      herdr_bin=""
+      if command -v herdr >/dev/null 2>&1; then
+        herdr_bin="herdr"
+      elif [ -n "${HERDR_BIN_PATH:-}" ] && [ -x "$HERDR_BIN_PATH" ]; then
+        herdr_bin="$HERDR_BIN_PATH"
+      elif [ -x "$HOME/.local/bin/herdr" ]; then
+        herdr_bin="$HOME/.local/bin/herdr"
+      fi
+      if [ -n "$herdr_bin" ]; then
+        pane_json=$("$herdr_bin" pane current 2>/dev/null || true)
+        if [ -n "$pane_json" ]; then
+          request=$(printf '%s' "$pane_json" | WF4_REQUEST="$request" python3 -c '
+import json, os, sys
+req_raw = os.environ["WF4_REQUEST"]
+try:
+    req = json.loads(req_raw)
+    pane = json.load(sys.stdin)
+except Exception:
+    sys.stdout.write(req_raw)
+    sys.exit(0)
+if req.get("kind") == "skill.phase" and req.get("phase") in ("doit", "done"):
+    sess = req.get("session")
+    if sess is None:
+        sess = {}
+    if isinstance(sess, dict):
+        p = (pane.get("result") or {}).get("pane") or {}
+        sid = (p.get("agent_session") or {}).get("value")
+        if isinstance(p.get("pane_id"), str):
+            sess.setdefault("pane", p["pane_id"])
+        if isinstance(p.get("agent"), str):
+            sess.setdefault("agent", p["agent"])
+        if isinstance(sid, str) and sid:
+            sess.setdefault("session_id", sid)
+        if sess:
+            req["session"] = sess
+sys.stdout.write(json.dumps(req))
+' 2>/dev/null || printf '%s' "$request")
+        fi
+      fi
     fi
     repo_id=$(repository_id)
     exec deno run --allow-read --allow-write --allow-ffi --allow-env --allow-run \

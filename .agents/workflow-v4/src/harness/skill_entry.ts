@@ -269,7 +269,7 @@ function registerOf(raw: Record<string, unknown>): Result<RegisterInit | undefin
   });
 }
 
-/** doit の `session` field。全 subfield 省略可。 */
+/** doit / done の `session` field。全 subfield 省略可。 */
 function sessionOf(raw: Record<string, unknown>): Result<SessionAttachment | undefined> {
   const value = raw["session"];
   if (value === undefined) return ok(undefined);
@@ -382,11 +382,14 @@ function phaseInputOf(raw: Record<string, unknown>): Result<SkillPhaseInput> {
       if (task.value === undefined) {
         return err("missing_field", "done は task を必要とする", "task");
       }
+      const session = sessionOf(raw);
+      if (!session.ok) return session;
       const verification = scalars["verification"];
       return ok({
         phase,
         task: task.value,
         ...(verification === undefined ? {} : { verification }),
+        ...(session.value === undefined ? {} : { session: session.value }),
         ...correlationField,
       });
     }

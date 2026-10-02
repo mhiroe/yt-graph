@@ -43,18 +43,23 @@ or the task must join a non-default active iteration. Resolve it via
 
 ## Session record
 
-When you can resolve the session you run in, pass it as `session` on the doit
-request — the runtime appends a `session.attach` activity right after
-`task.start_doing` applies, which is what the retrospective uses to find the
-transcript:
+`wf4.sh` auto-attaches the calling session to a doit request: when the
+request omits `session`, it resolves `herdr pane current` (pane id, agent,
+agent session id) and injects it, so the runtime appends a `session.attach`
+activity right after `task.start_doing` applies — the retrospective's link
+to the transcript. No action needed under herdr.
+
+Outside herdr (or when the auto-attach resolves to the wrong pane — e.g. a
+delegated run), pass `session` explicitly and it is used instead:
 
 ```json
 {"kind":"skill.phase","phase":"doit","wish":{...},"task":{...},"session":{"pane":"w16:p1H","agent":"devin","session_id":"..."},"operation_prefix":"impl-"}
 ```
 
-All subfields are optional; send what you can resolve. Under herdr,
-`herdr agent get <pane>` returns `agent_session.value`. With nothing resolvable,
-omit `session` — the run proceeds without it.
+All subfields are optional; send what you can resolve.
+`herdr agent get <pane>` returns `agent_session.value`. An explicit
+`session` is never overridden by the auto-attach; individual missing
+subfields are filled in.
 
 ## Discipline
 

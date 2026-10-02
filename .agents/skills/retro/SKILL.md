@@ -44,7 +44,7 @@ Flag glossary (the second column of scan output):
 | `CHAIN` | op chain anomaly: non-applied op or incomplete chain |
 | `NO-VERIFY` | no verification recorded at `task.complete` |
 | `RESIDUE` | uncommitted paths at report time (upper bound, not attribution) |
-| `NO-SESS` | no `session.attach` — executor session unknown |
+| `NO-SESS` | no `session.attach` — executor session unknown (should only appear on non-herdr runs; `wf4.sh` auto-attaches the calling pane to doit/done) |
 | `NO-TRANS` | session recorded but transcript unresolved |
 | `BIG-TRANS` | transcript >= 2048 KB or any message/tool output >64 KB |
 | `OLD-FMT` | journal predates the full-report format — missing fields are format, not defects |

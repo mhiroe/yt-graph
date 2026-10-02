@@ -465,6 +465,21 @@ export interface IterationFsPort {
   scanTree(): Result<IterationTreeScan>;
 }
 
+/**
+ * git の first-commit metadata を読む口 (0.24.0-era repair recipe)。
+ *
+ * generated stamp を持つ file が 1 枚も無い iteration は、seq / created_at を
+ * tree の記録から復元できない。復元材料は「その dir を初めて commit した
+ * commit の metadata」だけ — この port は dir (repo root 相対) を受けてその
+ * commit の author date (ISO8601 UTC 正規化) を返す。記録が無い / git
+ * 管理外なら `ok(undefined)`、git 自体を呼べない環境は `err`。
+ *
+ * 実装は `adapters/git_iteration_history.ts` (`git log --diff-filter=A`)。
+ */
+export type IterationHistoryPort = {
+  readonly firstCommit: (dir: string) => Result<string | undefined>;
+};
+
 // ---------------------------------------------------------------------------
 // tree -> DB rebuild (fresh device)
 // ---------------------------------------------------------------------------
@@ -547,8 +562,20 @@ export type IterationRebuildPlan = {
   readonly iterations: readonly RebuiltIteration[];
 };
 
+/** first-commit metadata から復元した iteration (disclosure 用の記録)。 */
+export type ReconstructedIteration = {
+  readonly dir: string;
+  readonly seq: number;
+  readonly created_at: string;
+};
+
 export type IterationRebuildOutcome =
-  | { readonly ok: true; readonly plan: IterationRebuildPlan; readonly warnings: readonly string[] }
+  | {
+    readonly ok: true;
+    readonly plan: IterationRebuildPlan;
+    readonly warnings: readonly string[];
+    readonly reconstructed: readonly ReconstructedIteration[];
+  }
   | { readonly ok: false; readonly failures: readonly IterationTreeFailure[] };
 
 function parentDirOf(path: string): string {
@@ -596,6 +623,12 @@ type RebuildCandidate = {
   dir: string;
   /** active/current link / member link / stamped file / stamp claim で「iteration である」と確定したか。 */
   anchored: boolean;
+  /**
+   * first-commit metadata から再構成した created_at (stamp を持たない dir 用)。
+   * phantom synthesis (dir が tree に無く committed link + git 記録だけ残る) で
+   * 既に引いた値はここへ入れて再利用する。
+   */
+  historyCreated?: string;
   /** `<p>/active/<label>` link が在るか。 */
   active: boolean;
   /** `current` symlink が指したか (optional default。active なしでは立たない)。 */
@@ -623,6 +656,13 @@ function scopeKeyOf(scope: IterationScope, componentPath: string): string {
  *   birth)、stamp claim そのもの (mind / doc member は frontmatter が唯一の
  *   committed 記録になりうる)。stamp と証拠集合が食い違う時は fail ではなく
  *   warning — stamp は generated なので DB から再投影すれば直る。
+ * - **0.24.0-era tree の扱い** (git は空 dir を commit しない): skeleton
+ *   subdir を欠く / 丸ごと欠落した iteration dir は committed `active` link と
+ *   `history` port (first-commit metadata) で拾う。claim-less な anchored
+ *   candidate には first-commit の author date を `created_at` に、scope 内の
+ *   最小の空き seq を commit 記録順で割る (記録からの復元であり、順序を
+ *   invent するわけではない)。`history` 未注入 / 記録無しなら従来どおり
+ *   fail closed。
  */
 export function planIterationRebuild(input: {
   readonly scan: IterationTreeScan;
@@ -630,6 +670,8 @@ export function planIterationRebuild(input: {
   readonly files: ReadonlyMap<string, Partial<IterationProperties> | undefined>;
   /** 登録済み component の canonical document path (locator の `#` 前)。 */
   readonly componentPaths: ReadonlySet<string>;
+  /** first-commit metadata port。未注入なら stamp 無し iteration は fail closed。 */
+  readonly history?: IterationHistoryPort;
 }): IterationRebuildOutcome {
   const failures: IterationTreeFailure[] = [];
   const warnings: string[] = [];
@@ -653,18 +695,69 @@ export function planIterationRebuild(input: {
   const candidateParents = new Set<string>();
   for (const dir of candidateDirs) candidateParents.add(parentDirOf(dir));
 
+  // first-commit metadata (git) の lazy lookup。dir ごとに 1 回だけ port を叩く。
+  // `undefined` = 記録無し (または port 未注入)。port の err は「記録無し」と
+  // 区別したいので別に保持する (claim-less candidate の failure reason で使う)。
+  const historyCache = new Map<string, { value?: string; error?: string }>();
+  const historyOf = (dir: string): { value?: string; error?: string } => {
+    const cached = historyCache.get(dir);
+    if (cached !== undefined) return cached;
+    const entry: { value?: string; error?: string } = {};
+    if (input.history !== undefined) {
+      const result = input.history.firstCommit(dir);
+      if (result.ok) {
+        if (result.value !== undefined) entry.value = result.value;
+      } else {
+        entry.error = `${result.error.code}: ${result.error.message}`;
+      }
+    }
+    historyCache.set(dir, entry);
+    return entry;
+  };
+
+  // committed `active` link + first-commit 記録だけが残る iteration dir
+  // (skeleton を全部欠いて git から落ちた 0.24.0-era dir) を phantom candidate
+  // として候補に足す。`historyCreated` に取得済みの created を保持する。
+  const synthesize = (dir: string, created: string): RebuildCandidate | undefined => {
+    const scope = iterationDirScope(dir);
+    if (scope === undefined) return undefined;
+    const candidate: RebuildCandidate = {
+      ...scope,
+      dir,
+      anchored: true,
+      active: false,
+      isDefault: false,
+      claims: [],
+      memberPaths: new Set(),
+      historyCreated: created,
+    };
+    candidates.set(dir, candidate);
+    candidateDirs.add(dir);
+    candidateParents.add(parentDirOf(dir));
+    return candidate;
+  };
+
   // `active/<label>` link: `<p>/active/<label>` -> `<p>/<label>` (component) /
   // `docs/active/<label>` -> `docs/iterations/<label>` (project)。link 名と
   // target の basename が一致しなければならない (target を link path から期待値で
   // 割り出して突き合わせる)。自分の namespace 外 (`<p>` に candidate が無く
-  // `docs` でもない) の active dir は別 tool のものとして触らない。
+  // `docs` でもない) の active dir は別 tool のものとして触らない — ただし
+  // committed link の target に first-commit 記録が残るなら、空 dir が git から
+  // 落ちた 0.24.0-era iteration として自 namespace と見なす。
   for (const fact of input.scan.actives) {
     const activeDir = parentDirOf(fact.link); // `<p>/active` or `docs/active`
     const owner = parentDirOf(activeDir); // `<p>` or `docs`
-    const ours = owner === "docs" || candidateParents.has(owner);
-    if (!ours) continue;
     const label = baseNameOf(fact.link);
     const expected = owner === "docs" ? `docs/iterations/${label}` : `${owner}/${label}`;
+    let ours = owner === "docs" || candidateParents.has(owner);
+    if (!ours) {
+      const record = ITERATION_LABEL_PATTERN.test(label) &&
+          !(RESERVED_ITERATION_LABELS as readonly string[]).includes(label)
+        ? historyOf(expected)
+        : {};
+      if (record.value === undefined) continue;
+      ours = true;
+    }
     if (fact.invalid || fact.target === undefined) {
       failures.push({
         path: fact.link,
@@ -680,13 +773,22 @@ export function planIterationRebuild(input: {
       });
       continue;
     }
-    const candidate = candidates.get(expected);
+    let candidate = candidates.get(expected);
     if (candidate === undefined) {
-      failures.push({
-        path: fact.link,
-        reason: `active link が存在しない / iteration でない dir を指す: ${expected}`,
-      });
-      continue;
+      // dir が tree に無い (git が空 dir を運ばない) が committed link + first
+      // commit 記録が残るなら phantom として復元する。skeleton は repair の
+      // DB -> fs 側 (ensureSkeleton) が組み直す。
+      const record = historyOf(expected);
+      const phantom = record.value === undefined ? undefined : synthesize(expected, record.value);
+      if (phantom !== undefined) {
+        candidate = phantom;
+      } else {
+        failures.push({
+          path: fact.link,
+          reason: `active link が存在しない / iteration でない dir を指す: ${expected}`,
+        });
+        continue;
+      }
     }
     candidate.anchored = true;
     candidate.active = true;
@@ -848,6 +950,9 @@ export function planIterationRebuild(input: {
 
   // seq / created_at は claim の記録値だけ。複数の claim が一致しない時、
   // 記録が 1 つも無い時、別の iteration と seq が衝突する時は fail closed。
+  // 記録無しだけは例外 — first-commit metadata が在ればそこから復元する
+  // (0.24.0-era recipe: stamp を持たない iteration は dir の最初の commit を
+  // created_at にし、scope 内の最小の空き seq を commit 記録順に割る)。
   const byScope = new Map<string, RebuildCandidate[]>();
   for (const candidate of anchored) {
     const key = scopeKeyOf(candidate.scope, candidate.component_path);
@@ -856,15 +961,25 @@ export function planIterationRebuild(input: {
     else bucket.push(candidate);
   }
   const rebuilt: RebuiltIteration[] = [];
+  const reconstructed: ReconstructedIteration[] = [];
   for (const bucket of byScope.values()) {
     const seqSeen = new Map<number, RebuildCandidate>();
+    const stampless: { candidate: RebuildCandidate; created: string }[] = [];
     for (const candidate of bucket) {
       if (candidate.claims.length === 0) {
-        failures.push({
-          path: candidate.dir,
-          reason:
-            "iteration dir は在るが seq の記録 (generated frontmatter の `iteration:`) が 1 件も無い — 順序を invent しないので fail closed",
-        });
+        const record = candidate.historyCreated !== undefined
+          ? { value: candidate.historyCreated }
+          : historyOf(candidate.dir);
+        if (record.value === undefined) {
+          failures.push({
+            path: candidate.dir,
+            reason: record.error === undefined
+              ? "iteration dir は在るが seq の記録 (generated frontmatter の `iteration:`) が 1 件も無い — 順序を invent しないので fail closed (first commit metadata も無し)"
+              : `iteration dir は在るが seq の記録が無く、first commit metadata も読めない: ${record.error}`,
+          });
+          continue;
+        }
+        stampless.push({ candidate, created: record.value });
         continue;
       }
       const seqs = new Set(candidate.claims.map((claim) => claim.seq));
@@ -892,6 +1007,23 @@ export function planIterationRebuild(input: {
         continue;
       }
       seqSeen.set(seq, candidate);
+    }
+    // stamp を持たない candidate: first-commit の順で scope 内の最小の空き seq を
+    // 割る (stamped の記録値は動かさない)。created_at は first commit の author
+    // date。再構成は disclosure として warning に残す。
+    stampless.sort((a, b) =>
+      a.created === b.created
+        ? a.candidate.name.localeCompare(b.candidate.name)
+        : a.created.localeCompare(b.created)
+    );
+    for (const { candidate, created } of stampless) {
+      let seq = 1;
+      while (seqSeen.has(seq)) seq += 1;
+      seqSeen.set(seq, candidate);
+      candidate.claims.push({ seq, created, via: `first-commit:${candidate.dir}` });
+      // 復元は disclosure として result.reconstructed に残す (warning にすると
+      // repair 全体が非 applied に畳まれるので、ここでは warning にしない)。
+      reconstructed.push({ dir: candidate.dir, seq, created_at: created });
     }
   }
 
@@ -938,5 +1070,5 @@ export function planIterationRebuild(input: {
   }
 
   if (failures.length > 0) return { ok: false, failures };
-  return { ok: true, plan: { iterations: rebuilt }, warnings };
+  return { ok: true, plan: { iterations: rebuilt }, warnings, reconstructed };
 }

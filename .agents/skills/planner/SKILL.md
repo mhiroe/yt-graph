@@ -101,6 +101,16 @@ then present readiness.
   mark the wish `ready` itself; `doit` requires the user's explicit readiness
   decision first. To park a wish, the user instruction goes through
   `wish.transition` with `wish.set_pending` + a verbatim `reason`.
+- Dropping a task (dedupe / superseded / cancelled) is doc-first: set the
+  node's marker to `[dropped]` in the owning doc, then run
+  `wf4.sh cli '{"kind":"cutover.bind"}'` — bind emits the typed `task.drop`
+  (`cutover-drop-<id>`). Bind is a repo-wide reconcile, not a scoped op: it
+  drives every checkbox↔DB divergence, so run it on a converged tree and read
+  `status_transitions` / `findings` in the report. The op's `reason` is
+  mechanical (`cutover bind: ...`) — record the human reason in the task line,
+  the commit, or the return. Raw `workflow.submit` is NOT a sanctioned agent
+  seam (the caller hand-builds the command envelope — the wart this path
+  replaces). There is no `task.transition` request kind.
 - If the run halts (`halted_at` set / exit 3) or returns an error, stop and
   report — do not retry with guessed state.
 

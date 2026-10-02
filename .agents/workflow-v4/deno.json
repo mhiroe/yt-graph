@@ -3,7 +3,7 @@
     "check": "deno check src/mod.ts src/cli/main.ts src/harness/skill_entry.ts tests/ f1/run.ts",
     "test": "deno test --allow-read --allow-write --allow-run --allow-env",
     "verify": "deno check src/mod.ts src/cli/main.ts src/harness/skill_entry.ts tests/ f1/run.ts && deno test --allow-read --allow-write --allow-run --allow-env && deno fmt --check && deno lint && deno task contract:check",
-    "cli": "deno run --allow-read --allow-write --allow-ffi --allow-env src/cli/main.ts",
+    "cli": "deno run --allow-read --allow-write --allow-ffi --allow-env --allow-run src/cli/main.ts",
     "skill": "deno run --allow-read --allow-write --allow-ffi --allow-env --allow-run src/harness/skill_entry.ts",
     "f1": "deno run --allow-read --allow-write --allow-run --allow-ffi --allow-env f1/run.ts",
     "contract": "python3 ../../../scripts/build_workflow_contract.py --root ../../..",

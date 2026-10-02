@@ -66,7 +66,35 @@ export type BindReport = {
   readonly status_transitions: number;
   readonly findings: readonly BindFinding[];
   readonly errors: readonly BindError[];
+  /**
+   * cutover contract の判定。**`"ok"` = contract が結ぶと約束する anchor がすべて
+   * COMPONENTS で解決できる。** 1 件でも欠けた (required-anchor failure) 場合は
+   * `"partial"` — 原因は `findings` / `errors` に全部残る。
+   *
+   * required-anchor failure に数えるのは vault-intended (m/w/t prefix) かつ node を
+   * 持つ anchor の未結びだけ:
+   *
+   * - `duplicate` — どちらの写しも結ばないので、doc に見える id は COMPONENTS に無い
+   *   (推測 merge しないのは不変条件どおり。変わるのは verdict だけ)。
+   * - `invalid` — m/w/t 形の書き損じは vault を意図した anchor の失敗。
+   * - `errors` — register / observe / status 遷移の失敗はすべて required anchor の
+   *   処理中に起きたもの。
+   *
+   * `foreign` / `unclaimed` / `projection_skipped` / `status_unmapped` /
+   * `status_ahead` は contract の約束対象ではないので verdict に効かない。
+   */
+  readonly verdict: "ok" | "partial";
 };
+
+/**
+ * verdict を `"partial"` に倒す finding category。**`foreign` / `unclaimed` /
+ * `projection_skipped` / `status_*` はここへ入れない** — 結ぶ対象の失敗ではなく
+ * discovery 情報なので。
+ */
+const REQUIRED_ANCHOR_FAILURES: ReadonlySet<BindFinding["category"]> = new Set([
+  "duplicate",
+  "invalid",
+]);
 
 /**
  * checkbox の中身から目指す task status。`my-wish-data.md` が checkbox marker を
@@ -445,6 +473,13 @@ export function bindAnchors(
     status_transitions: statusTransitions,
     findings,
     errors,
+    // **「処理した」ではなく「約束した anchor が全部結べた」が ok の意味。** doc に見える
+    // vault-intended anchor が未結びのまま ok を返すと、consumer は欠けた component に
+    // 後続 op (task.request_ready 等) を打って not_found になって初めて気付く。
+    verdict: errors.length > 0 ||
+        findings.some((finding) => REQUIRED_ANCHOR_FAILURES.has(finding.category))
+      ? "partial"
+      : "ok",
   };
 }
 

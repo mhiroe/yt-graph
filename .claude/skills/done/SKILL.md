@@ -135,9 +135,15 @@ Allowed `operation` values: `wish.request_ready`, `wish.set_pending`,
 `state_revision` from each applied response); `plan -> dropped` is a single
 `wish.drop`.
 
+After `wish.complete` applies, the owning PM runs the teardown sweep below
+over every `*_tl` / `*_worker` pane that wish spawned.
+
 ## Session release
 
 When the task ran on a Worker pane, this declaration is also what releases
 that session — the Worker clears on the PM's done, never on its own judgement,
 and a finished session takes no next task. The canonical session-lifecycle
 rule is the shared `herdr.md` instructions; this skill only points at it.
+For a task-spawned pane the PM's done declaration is immediately followed by
+the teardown (`agent_switch teardown <name>`) when no work is queued for it —
+clear = reuse, teardown = close (kernel contract).

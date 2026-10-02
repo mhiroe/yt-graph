@@ -32,6 +32,7 @@ import type { WorkflowErrorCode } from "../result.ts";
 import { openNodeSqliteDriver } from "../adapters/node_sqlite.ts";
 import { createFsDocumentPort } from "../adapters/fs_document.ts";
 import { createFsIterationPort } from "../adapters/fs_iteration.ts";
+import { createGitIterationHistory } from "../adapters/git_iteration_history.ts";
 import { SqliteWorkflowStore } from "../sql/store.ts";
 import { vaultComponentIdAllocator } from "../sql/transaction.ts";
 import {
@@ -283,6 +284,10 @@ function main(): void {
       // iteration (schema 6) の派生 fs state。skeleton / symlink を組み、
       // `iteration.repair` が DB から再構成する口にもなる。
       iteration_fs: createFsIterationPort(options.root),
+      // iteration.repair の first-commit reconstruction (0.24.0-era recipe)。
+      // git へ spawn するので `--allow-run` が無い環境では port 自体が err を返し、
+      // repair は従来どおり fail closed する。
+      iteration_history: createGitIterationHistory(options.root),
     }, request);
 
     if (!response.ok && response.error !== undefined) {
