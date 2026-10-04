@@ -1,4 +1,6 @@
 apm_modules/
 /.workflow.nosync/
+.workflow/transport/
 docs/chatgpt/
 .agent-state/
+.lsmcp/cache/

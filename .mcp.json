@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "lsmcp": {
+      "command": "/Users/m/.local/share/mise/shims/lsmcp",
+      "args": ["-p", "typescript"],
+      "env": {
+        "NODE_PATH": "/Users/m/.local/share/mise/installs/node/22.22.0/lib/node_modules"
+      }
+    }
+  }
+}

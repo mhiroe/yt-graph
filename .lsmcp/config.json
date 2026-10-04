@@ -1,0 +1,4 @@
+{
+  "preset": "typescript",
+  "files": ["**/*.ts", "**/*.tsx", "**/*.js"]
+}
