@@ -1,8 +1,8 @@
 // Playback surface seam — ul-browser is the preferred host (user
-// direction); when it cannot host playback the seam falls back to an
-// embed surface (ContentHub webview / yt-client shape). No real
-// integration is wired yet: detection is a stub and embed only produces
-// the target descriptor.
+// direction; its viability is an open question on the wish), then a
+// ContentHub webview / yt-client host, then a plain iframe embed as the
+// always-available floor. Everything but the embed is a stub until the
+// provider contracts are fixed — availability detection is the seam.
 
 export type OpenRequest = { videoId: string };
 
@@ -29,6 +29,16 @@ export class UlBrowserSurface implements PlaybackSurfaceAdapter {
   }
 }
 
+export class ContentHubWebviewSurface implements PlaybackSurfaceAdapter {
+  readonly name = "contenthub-webview";
+  async available(): Promise<boolean> {
+    return false;
+  }
+  async open(_req: OpenRequest): Promise<OpenResult> {
+    return { opened: false, via: this.name, note: "ContentHub webview host not wired" };
+  }
+}
+
 export class EmbedSurface implements PlaybackSurfaceAdapter {
   readonly name = "embed";
   async available(): Promise<boolean> {
@@ -43,9 +53,14 @@ export class EmbedSurface implements PlaybackSurfaceAdapter {
   }
 }
 
-// Selection order is fixed by the wish: ul-browser first, embed fallback.
+// Selection order is fixed by the wish: ul-browser first, then ContentHub
+// webview, embed as the floor.
 export async function selectSurface(
-  candidates: PlaybackSurfaceAdapter[] = [new UlBrowserSurface(), new EmbedSurface()],
+  candidates: PlaybackSurfaceAdapter[] = [
+    new UlBrowserSurface(),
+    new ContentHubWebviewSurface(),
+    new EmbedSurface(),
+  ],
 ): Promise<PlaybackSurfaceAdapter> {
   for (const adapter of candidates) {
     if (await adapter.available()) return adapter;

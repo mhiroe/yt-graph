@@ -5,6 +5,11 @@
 // that contract carries only channels a human routed to accept, so this
 // surface never lists anything else. Until the export lands the feed
 // fails soft onto the local fixture.
+//
+// Provisional export shape (contract not yet fixed on the yt-graph side):
+// a JSON document `{ "channels": [{ "id", "title", ... }] }` fetched from
+// a configurable URL — served from the app's public dir or wherever the
+// exporter drops it (VITE_PLAYBACK_EXPORT_URL, default /feed-export.json).
 
 import fixtureData from "./fixtures/adopted-channels.json";
 
@@ -29,15 +34,45 @@ export interface ChannelFeedAdapter {
   listChannels(): Promise<ChannelFeedResult>;
 }
 
+export type ExportLoader = (url: string) => Promise<unknown>;
+
+const fetchLoader: ExportLoader = async (url) => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`export fetch ${res.status}`);
+  return res.json();
+};
+
+export function parseExportDocument(raw: unknown): Channel[] | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const channels = (raw as { channels?: unknown }).channels;
+  if (!Array.isArray(channels)) return null;
+  for (const c of channels) {
+    if (typeof c !== "object" || c === null) return null;
+    const { id, title } = c as { id?: unknown; title?: unknown };
+    if (typeof id !== "string" || typeof title !== "string") return null;
+  }
+  return channels as Channel[];
+}
+
 export class ExportContractFeed implements ChannelFeedAdapter {
   readonly name = "export";
+  constructor(
+    private readonly url: string = "/feed-export.json",
+    private readonly load: ExportLoader = fetchLoader,
+  ) {}
   async listChannels(): Promise<ChannelFeedResult> {
-    return {
-      channels: [],
-      source: "export",
-      degraded: true,
-      note: "yt-graph adopted-channel export (t-01M3RZVVED) not connected",
-    };
+    try {
+      const channels = parseExportDocument(await this.load(this.url));
+      if (channels === null) throw new Error("invalid export shape");
+      return { channels, source: "export", degraded: false };
+    } catch (e) {
+      return {
+        channels: [],
+        source: "export",
+        degraded: true,
+        note: `export not connected: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
   }
 }
 
@@ -52,7 +87,7 @@ export class FixtureFeed implements ChannelFeedAdapter {
 export class FailoverFeed implements ChannelFeedAdapter {
   readonly name = "auto";
   constructor(
-    private readonly primary: ChannelFeedAdapter = new ExportContractFeed(),
+    private readonly primary: ChannelFeedAdapter,
     private readonly fallback: ChannelFeedAdapter = new FixtureFeed(),
   ) {}
   async listChannels(): Promise<ChannelFeedResult> {
@@ -63,13 +98,16 @@ export class FailoverFeed implements ChannelFeedAdapter {
   }
 }
 
-export function createChannelFeed(kind: string = "auto"): ChannelFeedAdapter {
+export function createChannelFeed(
+  kind: string = "auto",
+  opts: { exportUrl?: string } = {},
+): ChannelFeedAdapter {
   switch (kind) {
     case "export":
-      return new ExportContractFeed();
+      return new ExportContractFeed(opts.exportUrl);
     case "fixture":
       return new FixtureFeed();
     default:
-      return new FailoverFeed();
+      return new FailoverFeed(new ExportContractFeed(opts.exportUrl));
   }
 }

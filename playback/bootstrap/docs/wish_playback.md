@@ -98,11 +98,11 @@ iteration_created: 2026-09-30T15:58:11.354Z
 ## task 分解
 
 - [done] component skeleton / app scaffold: separable playback/bootstrap/app (own pnpm + Vite + React + TS entry、yt-graph core への依存は interface seam のみ) ^t-01M3SGQWVC
-- [ ] curated channel feed: yt-graph 採用 channel set を読む (export seam t-01M3RZVVED を consume — 未着の間は fixture で fail-soft) ^t-01M3SGR0AW
-- [ ] playback surface: ul-browser 優先の動画再生面 (fallback は ContentHub webview / yt-client embed、adapter seam) ^t-01M3SGR2FY
-- [ ] viewing limits + parental lock: 視聴 limit の設定・強制と親ロック (親 unlock 無しに limit 変更不可) ^t-01M3SGR5HF
-- [ ] learning-points gate seam: 学習 point で視聴可能な長さ/量を gate (dokoitsu pipe、未接続時 fail-soft の既定 policy) ^t-01M3SGR7S0
-- [ ] viewing rhythm enforcement: 30 分視聴ごとに 10 分休憩を強制 (休憩中は再生 block) ^t-01M3SGRBKR
+- [done] curated channel feed: yt-graph 採用 channel set を読む (export seam t-01M3RZVVED を consume — 未着の間は fixture で fail-soft) ^t-01M3SGR0AW
+- [done] playback surface: ul-browser 優先の動画再生面 (fallback は ContentHub webview / yt-client embed、adapter seam) ^t-01M3SGR2FY
+- [done] viewing limits + parental lock: 視聴 limit の設定・強制と親ロック (親 unlock 無しに limit 変更不可) ^t-01M3SGR5HF
+- [done] learning-points gate seam: 学習 point で視聴可能な長さ/量を gate (dokoitsu pipe、未接続時 fail-soft の既定 policy) ^t-01M3SGR7S0
+- [done] viewing rhythm enforcement: 30 分視聴ごとに 10 分休憩を強制 (休憩中は再生 block) ^t-01M3SGRBKR
 
 ## 受け入れ条件
 

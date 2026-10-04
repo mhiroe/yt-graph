@@ -15,10 +15,11 @@ export type Seams = {
 
 export async function resolveSeams(env: {
   feed?: string;
+  exportUrl?: string;
   points?: string;
 } = {}): Promise<Seams> {
   return {
-    feed: createChannelFeed(env.feed),
+    feed: createChannelFeed(env.feed, { exportUrl: env.exportUrl }),
     pointsGate: createPointsGate(env.points),
     surface: await selectSurface(),
   };
