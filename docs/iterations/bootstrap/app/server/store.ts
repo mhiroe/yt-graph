@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { SourceChannel } from "./sources/index.js";
-import { db as defaultDb } from "./db.js";
+import { db as defaultDb, type ChannelRow } from "./db.js";
 
 /** Insert a channel or refresh last_seen_at; status only moves forward explicitly. */
 export function upsertChannel(
@@ -128,6 +128,115 @@ export type CandidateView = {
   evidence_count: number;
   judgment?: { judge: string; score: number; verdict: string };
 };
+
+export type RelatedEdge = {
+  id: number;
+  kind: string;
+  created_at: string;
+  channel_id: string;
+  title: string;
+  status: string;
+};
+
+export type ChannelInspection = {
+  channel: ChannelRow;
+  evidence: {
+    id: number;
+    seed_channel_id: string | null;
+    source: string;
+    detail: unknown;
+    created_at: string;
+  }[];
+  judgments: {
+    id: number;
+    judge: string;
+    criteria: unknown;
+    score: number | null;
+    verdict: string | null;
+    created_at: string;
+  }[];
+  decisions: { id: number; decision: string; note: string | null; created_at: string }[];
+  edges: { incoming: RelatedEdge[]; outgoing: RelatedEdge[] };
+  snapshot: { fetched_at: string; payload: unknown } | null;
+};
+
+function parseJson(raw: string | null): unknown {
+  if (raw === null) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+/** One channel fully opened for the inspection UI — detail, provenance, AI
+ *  evaluations, related edges, and the human routing history. */
+export function inspectChannel(channelId: string, handle: DatabaseSync = defaultDb): ChannelInspection | null {
+  const channel = handle.prepare("select * from channel where id = ?").get(channelId) as
+    | ChannelRow
+    | undefined;
+  if (!channel) return null;
+
+  const evidence = (
+    handle
+      .prepare(
+        `select id, seed_channel_id, source, detail, created_at
+         from discovery_evidence where channel_id = ? order by id`,
+      )
+      .all(channelId) as unknown as {
+      id: number; seed_channel_id: string | null; source: string; detail: string; created_at: string;
+    }[]
+  ).map((e) => ({ ...e, detail: parseJson(e.detail) }));
+
+  const judgments = (
+    handle
+      .prepare(
+        `select id, judge, criteria, score, verdict, created_at
+         from judgment where channel_id = ? order by id desc`,
+      )
+      .all(channelId) as unknown as {
+      id: number; judge: string; criteria: string; score: number | null; verdict: string | null;
+      created_at: string;
+    }[]
+  ).map((j) => ({ ...j, criteria: parseJson(j.criteria) }));
+
+  const decisions = handle
+    .prepare(
+      `select id, decision, note, created_at
+       from human_decision where channel_id = ? order by id desc`,
+    )
+    .all(channelId) as unknown as ChannelInspection["decisions"];
+
+  const incoming = handle
+    .prepare(
+      `select e.id, e.kind, e.created_at, c.id as channel_id, c.title, c.status
+       from edge e join channel c on c.id = e.src_channel_id
+       where e.dst_channel_id = ? order by e.id`,
+    )
+    .all(channelId) as unknown as RelatedEdge[];
+  const outgoing = handle
+    .prepare(
+      `select e.id, e.kind, e.created_at, c.id as channel_id, c.title, c.status
+       from edge e join channel c on c.id = e.dst_channel_id
+       where e.src_channel_id = ? order by e.id`,
+    )
+    .all(channelId) as unknown as RelatedEdge[];
+
+  const snapRow = handle
+    .prepare(
+      `select fetched_at, payload from channel_snapshot where channel_id = ? order by id desc limit 1`,
+    )
+    .get(channelId) as unknown as { fetched_at: string; payload: string } | undefined;
+
+  return {
+    channel,
+    evidence,
+    judgments,
+    decisions,
+    edges: { incoming, outgoing },
+    snapshot: snapRow ? { fetched_at: snapRow.fetched_at, payload: parseJson(snapRow.payload) } : null,
+  };
+}
 
 /** Candidates with their provenance — what the UI lists before judgment. */
 export function listCandidates(handle: DatabaseSync = defaultDb): CandidateView[] {

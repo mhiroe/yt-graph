@@ -35,6 +35,14 @@ if (!healthy) {
   process.exit(1);
 }
 const graph = await (await fetch(`${base}/api/graph`)).json();
-console.log(`smoke: health ok; graph=${graph.channels.length} channels, ${graph.edges.length} edges`);
+const adopted = await (await fetch(`${base}/api/export/adopted`)).json();
+if (!Array.isArray(adopted.channels)) {
+  console.error("smoke: /api/export/adopted did not return a channels array");
+  child.kill("SIGKILL");
+  process.exit(1);
+}
+console.log(
+  `smoke: health ok; graph=${graph.channels.length} channels, ${graph.edges.length} edges; export=${adopted.channels.length} adopted`,
+);
 child.kill("SIGKILL");
 process.exit(0);

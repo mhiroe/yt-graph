@@ -58,13 +58,13 @@ readiness 対象外 → planner で新 task 化 + readiness QUESTION を gm へ
 
 ## task 分解 (planner sweep 2026-09-30)
 
-- [ ] inspection UI: 収集済み channel/candidate の調査画面 (詳細 / evidence / AI 評価 / 関連 edge) ^t-01M3RZVSCZ
-- [ ] adhoc mode: 人間起点の one-shot 探索・評価アクション (即時 expand / evaluate) ^t-01M3RZVSR9
-- [ ] relation-edge walk: collab/community/reference/influence/behavioral edge で seed 周辺を辿る ^t-01M3RZVT32
-- [ ] subscription-gap collaborative filtering: viewer overlap の missing edge 候補 (feasibility spike; comment-author surface は ContentHub 依存) ^t-01M3RZVTDP
-- [ ] staged evaluation + Channel Activity DNA: Tier0-3 funnel と安価層での大量判定 ^t-01M3RZVTRM
-- [ ] Curiosity Profile adapter seam: dokoitsu 供給想定の fail-soft seam ^t-01M3RZVV3E
-- [ ] adopted-channel export seam: 別 repo 再生 client への curated surface 契約 ^t-01M3RZVVED
+- [done] inspection UI: 収集済み channel/candidate の調査画面 (詳細 / evidence / AI 評価 / 関連 edge) ^t-01M3RZVSCZ
+- [done] adhoc mode: 人間起点の one-shot 探索・評価アクション (即時 expand / evaluate) ^t-01M3RZVSR9
+- [done] relation-edge walk: collab/community/reference/influence/behavioral edge で seed 周辺を辿る ^t-01M3RZVT32
+- [done] subscription-gap collaborative filtering: viewer overlap の missing edge 候補 (feasibility spike; comment-author surface は ContentHub 依存) ^t-01M3RZVTDP
+- [done] staged evaluation + Channel Activity DNA: Tier0-3 funnel と安価層での大量判定 ^t-01M3RZVTRM
+- [done] Curiosity Profile adapter seam: dokoitsu 供給想定の fail-soft seam ^t-01M3RZVV3E
+- [done] adopted-channel export seam: 別 repo 再生 client への curated surface 契約 ^t-01M3RZVVED
 
 ## user direction 2026-09-30 — discovery UX の可能性
 

@@ -11,7 +11,11 @@
     { "id": "FIXS03", "title": "Sound Workshop", "handle": "@soundworkshop", "description": "Build and restore synths and studio gear.", "subscriberCount": 150000, "videoCount": 85 },
     { "id": "FIXN01", "title": "Daily Vlog Central", "handle": "@dailyvlogcentral", "description": "Daily lifestyle vlogs.", "subscriberCount": 2300000, "videoCount": 1200 },
     { "id": "FIXN02", "title": "Crypto Hype Daily", "handle": "@cryptohype", "description": "Market commentary and coin picks.", "subscriberCount": 410000, "videoCount": 600 },
-    { "id": "FIXG01", "title": "Glassblowing Basics", "handle": "@glassbasics", "description": "Lampworking and furnace glass for beginners.", "subscriberCount": 67000, "videoCount": 45 }
+    { "id": "FIXG01", "title": "Glassblowing Basics", "handle": "@glassbasics", "description": "Lampworking and furnace glass for beginners.", "subscriberCount": 67000, "videoCount": 45 },
+    { "id": "FIXVIEW01", "title": "Analog Archivist", "handle": "@analogarchivist", "description": "Viewer channel: synth restoration notes and odd meters.", "subscriberCount": 4200, "videoCount": 12 },
+    { "id": "FIXVIEW02", "title": "Bench Science Fan", "handle": "@benchsciencefan", "description": "Viewer channel: garage chemistry playlists.", "subscriberCount": 1800, "videoCount": 6 },
+    { "id": "FIXVIEW03", "title": "Random Passer", "handle": "@randompasser", "description": "Viewer channel: unrelated tastes.", "subscriberCount": 300, "videoCount": 2 },
+    { "id": "FIXGAP01", "title": "Tape Loop Cartel", "handle": "@tapeloopcartel", "description": "Cassette culture and tape-loop performances.", "subscriberCount": 54000, "videoCount": 90 }
   ],
   "uploads": {
     "FIXSEED001": [
@@ -29,7 +33,14 @@
   "subscriptions": {
     "FIXSEED001": ["FIXSUB01", "FIXSUB02", "FIXPL03"],
     "FIXSUB01": ["FIXPL02"],
-    "FIXPL03": ["FIXG01"]
+    "FIXPL03": ["FIXG01"],
+    "FIXVIEW01": ["FIXSUB01", "FIXPL03", "FIXG01", "FIXGAP01"],
+    "FIXVIEW02": ["FIXSUB01", "FIXS01", "FIXGAP01", "FIXN02"],
+    "FIXVIEW03": ["FIXN02", "FIXS03"]
+  },
+  "mySubscriptions": ["FIXSUB01", "FIXPL03", "FIXS01", "FIXPL01"],
+  "commentAuthors": {
+    "FIXSEED001": ["FIXVIEW01", "FIXVIEW02", "FIXVIEW03"]
   },
   "playlists": [
     { "id": "PL1", "channelId": "FIXSEED001", "title": "Channels I keep coming back to", "itemCount": 4 },

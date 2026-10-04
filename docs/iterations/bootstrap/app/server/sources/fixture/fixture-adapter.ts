@@ -8,6 +8,10 @@ type FixtureData = {
   channels: SourceChannel[];
   uploads: Record<string, SourceVideo[]>;
   subscriptions: Record<string, string[]>;
+  /** The fixture's stand-in for "the logged-in account's subscriptions". */
+  mySubscriptions: string[];
+  /** Comment-author channel ids on a channel's recent videos (gap-CF entry). */
+  commentAuthors: Record<string, string[]>;
   playlists: SourcePlaylist[];
   playlistItems: Record<string, SourceVideo[]>;
   searchIndex: Record<string, string[]>;
@@ -62,5 +66,18 @@ export class FixtureSourceAdapter implements SourceAdapter {
 
   async playlistItems(playlistId: string): Promise<SourceVideo[]> {
     return data.playlistItems[playlistId] ?? [];
+  }
+
+  async mySubscriptions(): Promise<SourceChannel[]> {
+    return (data.mySubscriptions ?? [])
+      .map((id) => byId.get(id))
+      .filter((c): c is SourceChannel => c !== undefined);
+  }
+
+  async commentAuthorChannels(channelId: string, limit = 25): Promise<SourceChannel[]> {
+    return (data.commentAuthors[channelId] ?? [])
+      .slice(0, limit)
+      .map((id) => byId.get(id))
+      .filter((c): c is SourceChannel => c !== undefined);
   }
 }

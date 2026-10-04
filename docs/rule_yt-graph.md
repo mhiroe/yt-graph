@@ -84,7 +84,10 @@ constitution: none (repo autonomy)
 - YouTube 取得は `server/sources/` の `SourceAdapter` interface 越しのみ。
   選択は `YTG_SOURCE` env (`fixture` 既定 / `contenthub`)。認証情報を
   要求する実装を pipeline 側に直接書かない (2026-09-29, t-01M3NXG5G2)。
-  - `mySubscriptions()` は optional — session を持つ adapter のみが実装する。
+  - `mySubscriptions()` / `commentAuthorChannels()` は optional —
+    session / comment-author surface を持つ adapter のみが実装する
+    (subscription-gap CF seam, 2026-10-03 t-01M3RZVTDP)。無い adapter では
+    gap pass が空に縮退し `gaps` レポートに残る (fail-soft)。
 - ContentHub source adapter (t-01M3NXGS3D) は file transport の pure file
   client (request → `<root>/.transport/outbox/`、response → `inbox/`、
   drain → `archive/`; contract は ContentHub spec_contenthub_process.md
@@ -107,15 +110,39 @@ constitution: none (repo autonomy)
 - search 系 expansion は 1 pass あたり最大 2 query に抑える
   (quota law に連動)。
 
+### relation edge kinds
+
+scope: discovery
+constitution: none (repo autonomy)
+
+- relation-edge walk (`server/discovery/edgewalk.ts`, `POST /api/walk`) が
+  `edge` kind の語彙を型付けする (2026-10-03, t-01M3RZVT32)。adapter surface
+  → kind の写像: channelSubscriptions → `influence`、playlist co-billing
+  (owner の動画を含む playlist) → `collab`、playlist curation (owner 動画
+  なし) → `reference`、playlist 内 foreign channel の共起 → `community`、
+  upload fingerprint overlap → `behavioral`。`event` は現 adapter に
+  surface 無し — 新しい surface が来たら写像をここに足す。
+- walk は search / consult を呼ばない (search は入口のみ、quota law)。
+  frontier は stored edge の in/out 近傍 (上限 MAX_FRONTIER_NEIGHBORS) +
+  origin 自身。既に reject 済みの channel は cleanup で再候補化しない。
+- `expansion` kind は runDiscovery の provenance edge として残る;
+  typed edge と併存可 (unique は (src,dst,kind) 単位)。
+
 ### judgment adapter seam
 
 scope: adapters
 constitution: none (repo autonomy)
 
 - candidate 採点は `server/judgment/` の `JudgeAdapter` interface 越しのみ。
-  選択は `YTG_JUDGE` env (`auto` 既定 / `jev` / `heuristic`)。auto は
+  選択は `YTG_JUDGE` env (`auto` 既定 / `jev` / `heuristic` / `staged`)。auto は
   credential 検出時のみ jev、それ以外は deterministic heuristic に落ちる
   — 夜間 run を missing credential で止めない (2026-09-29, t-01M3NXGCAD)。
+- `staged` は Tier0-3 funnel (`server/judgment/funnel.ts`): Tier0 metadata
+  (heuristic overlap + Channel Activity DNA + profile fit) が先で、verdict
+  が review band に留まる間だけ上位 tier へ escalate する。上位 tier の
+  material (transcript / frames / VLM / strong judge) は必ず port 越し —
+  port 未配線なら直前の decisive tier で止まり、live call は起きない
+  (2026-10-03, t-01M3RZVTRM)。
 - 初期 criteria は user 確定の 4 件: relevance / novelty / signal_density /
   distinctiveness。verdict threshold (pass >=0.5 / review >=0.3) は
   `verdictFor` 一か所に集約する。
@@ -132,6 +159,24 @@ constitution: none (repo autonomy)
 - `available()` は `chappy status` の account 行を見るだけで ContentHub を
   spawn しない — 未 login / 未起動なら skip し、夜間 run は login window
   を出さず他 source で続行する。`suggest()` は fail-soft (throw せず [])。
+- engine 選択の命名・境界は x-graph と揃える (user directive 2026-10-01、
+  x-graph_pm 経由): `engineByName` 型の swap seam で `chatgpt` engine は
+  ContentHub `chatgpt.*` envelope 経由 (chappy transport) を採用する。
+  **devin CLI は engine backend として使わない** (retired option)。
+
+### curiosity profile seam
+
+scope: adapters
+constitution: none (repo autonomy)
+
+- viewer の Curiosity Profile は `server/profile/` の `ProfileAdapter`
+  interface 越しのみ。選択は `YTG_PROFILE` env (`auto` 既定 / `fixture` /
+  `off`)。供給元は dokoitsu 想定だが未実装 — `auto` は fail-soft の
+  NullProfile に落ち、将来の dokoitsu adapter はこの seam に登録する
+  (2026-10-03, t-01M3RZVV3E)。
+- profile 不在は `null` で表し、consumer は neutral として扱う — エラー
+  ではない。neutral の値 (`PROFILE_FIT_NEUTRAL`) と DNA-vs-profile fit
+  (`profileFit`) は `server/profile/types.ts` 一か所に集約する。
 
 ### preview-and-route boundary
 

@@ -21,10 +21,11 @@ import {
  * `.transport/outbox/`, response `<service>.response` in `.transport/inbox/`
  * (ContentHub spec_contenthub_process.md "transport contract").
  *
- * Live kinds on the ContentHub side today (adapter skeleton t-01M3NP1VR1):
- * `yt.session.check` and `yt.auth.inspect` only. The scrape kinds below are
- * the contract names from ContentHub wish task t-01M3NXZ93F — while that task
- * is unlanded the instance answers "Unsupported CLI command" and each read
+ * Live kinds on the ContentHub side today: `yt.session.check` /
+ * `yt.auth.inspect`, plus the scrape read-kinds on instance 0.1.2
+ * (`yt.channels.get` / `uploads` / `playlists` / `yt.playlists.items` /
+ * `yt.videos.comments` / `yt.search` / `yt.subscriptions.mine`). An instance
+ * that does not know a kind answers "Unsupported CLI command" and the read
  * fails soft (empty list / null) so an unattended run skips rather than
  * stalls. `yt.auth.action` (interactive auth kind) is intentionally never
  * sent — an unattended run must not drive a login UI.
@@ -153,6 +154,33 @@ export class ContentHubSourceAdapter implements SourceAdapter {
   async mySubscriptions(): Promise<SourceChannel[]> {
     const out = await this.read("yt.subscriptions.mine", {});
     return out === undefined ? [] : channelsFrom(out);
+  }
+
+  /**
+   * yt.videos.comments — comment-author channels on a channel's recent
+   * videos (the subscription-gap CF entry point). The read-kind is live on
+   * the instance; whether comment payloads carry author channel ids is the
+   * pending contenthub_pm addendum — when they don't, the list degrades to
+   * empty and the gap pass contributes nothing (fail-soft).
+   */
+  async commentAuthorChannels(channelId: string, limit = 25): Promise<SourceChannel[]> {
+    const out = await this.read("yt.videos.comments", {
+      channel_id: channelId,
+      limit,
+    });
+    if (out === undefined) return [];
+    const seen = new Set<string>();
+    const authors: SourceChannel[] = [];
+    for (const raw of rows(out, ["comments", "items", "results"])) {
+      const id = firstString(raw, "author_channel_id", "authorChannelId", "channel_id", "channelId");
+      if (id === undefined || seen.has(id)) continue;
+      seen.add(id);
+      authors.push({
+        id,
+        title: firstString(raw, "author", "author_name", "authorTitle", "name") ?? id,
+      });
+    }
+    return authors.slice(0, limit);
   }
 
   /**

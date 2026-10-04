@@ -181,10 +181,17 @@ note: `docs/chatgpt/YouTube発見方法比較.md` — gitignored)。
   `playlistItems.list` / `channels.list` / `subscriptions.list`
   (shared 10k-unit bucket, 1 unit/call)。
 - YouTube Home feed は Data API から取得不可 — signal として使えない。
-- collaborative filtering 経路の実現性 (未検証 2026-09-29): 他人の公開
-  subscriptions の取得可否 (ContentHub session 経路と Data API 双方)、
-  「似た viewer」を見つける入口 (comment author 等)、similarity /
-  gap の scoring 方式。
+- collaborative filtering 経路の実現性 — spike 実施済み (2026-10-03,
+  t-01M3RZVTDP): 連鎖は現 ContentHub adapter surface 上に組める
+  (subscriptions.mine → videos.comments の comment author = 類似 viewer
+  入口 → channels.subscriptions(viewer) → mine との差分 = missing edge)。
+  `server/discovery/gapcf.ts` + adapter optional methods で fail-soft 実装。
+  未解決の実質リスク: (a) videos.comments が author の channel id を返すか
+  (contenthub_pm addendum 待ち — id 無しなら seam は空に縮退)、(b) viewer
+  の公開 subscriptions の可視率 (YouTube は非公開が多く hit 率が低い恐れ)、
+  (c) 読み取り量 — video あたり comments × viewer 数の session コスト。
+  overlap は shared / viewer-subs 比、~0.5 志向 (spec "discovery
+  strategy"); 複数 viewer 共有の gap channel が最強 signal。
 - Channel Activity DNA の schema、transcript と VLM の切り分け基準。
 - Curiosity Profile: 明示入力か accept/reject 履歴からの学習か、
   dokoitsu 蓄積データからの供給か (user 2026-09-29: dokoitsu pipe を

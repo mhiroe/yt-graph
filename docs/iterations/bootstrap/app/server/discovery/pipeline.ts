@@ -4,6 +4,7 @@ import { db as defaultDb } from "../db.js";
 import { fingerprintFromTitles } from "./fingerprint.js";
 import { cleanup, type RawHit } from "./cleanup.js";
 import { createConsultAdapter, type ConsultAdapter } from "../consult/index.js";
+import { runSubscriptionGap } from "./gapcf.js";
 import { insertEdge, insertEvidence, insertSnapshot, rejectedIds, upsertChannel } from "../store.js";
 
 export type DiscoveryResult = {
@@ -12,6 +13,8 @@ export type DiscoveryResult = {
   raw_count: number;
   kept: { id: string; title: string; sources: string[] }[];
   dropped: { id: string; reason: string }[];
+  /** Subscription-gap CF seam report (fail-soft surface; absent when skipped). */
+  gap_cf?: { viewers: number; candidates: number; gaps: string[] };
 };
 
 /** Max search queries per expansion — search stays a minor path (quota law). */
@@ -88,6 +91,26 @@ export async function runDiscovery(
     }
   }
 
+  // Surface 5: subscription-gap CF — viewers partially overlapping the
+  // account's own subscriptions contribute their non-overlapping subs as
+  // missing-edge candidates. Fail-soft: when the adapter lacks
+  // mySubscriptions / comment-author surfaces the pass contributes nothing
+  // and its `gaps` report says why (feasibility spike t-01M3RZVTDP).
+  let gapCf: DiscoveryResult["gap_cf"];
+  try {
+    const gap = await runSubscriptionGap(adapter, seed);
+    for (const hit of gap.hits) {
+      for (const e of hit.evidence) add(hit.channel, e.source, e.detail);
+    }
+    gapCf = { viewers: gap.viewers.length, candidates: gap.hits.length, gaps: gap.gaps };
+  } catch (e) {
+    gapCf = {
+      viewers: 0,
+      candidates: 0,
+      gaps: [`pass failed soft: ${e instanceof Error ? e.message : String(e)}`],
+    };
+  }
+
   const { kept, dropped } = cleanup([...hits.values()], seed.id, rejectedIds(handle));
 
   for (const { channel, evidence } of kept) {
@@ -108,5 +131,6 @@ export async function runDiscovery(
       sources: [...new Set(evidence.map((e) => e.source))],
     })),
     dropped,
+    gap_cf: gapCf,
   };
 }

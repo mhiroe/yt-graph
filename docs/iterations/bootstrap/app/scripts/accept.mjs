@@ -61,11 +61,36 @@ try {
   const consultHits = disc.body.kept?.filter((k) => k.sources.includes("stub")) ?? [];
   check("consult surface contributed", consultHits.length >= 1, consultHits.map((c) => c.id).join(","));
 
+  // 1b. adhoc: one-shot evaluate of a single candidate, force re-judge,
+  //     and the status guards (unknown / already-routed channels)
+  const one = await post("/api/judge", { channel_id: "FIXSUB01" });
+  check("adhoc evaluate 200", one.status === 200);
+  check(
+    "adhoc evaluate judged the target",
+    (one.body.judged ?? []).some((j) => j.id === "FIXSUB01"),
+  );
+  const again = await post("/api/judge", { channel_id: "FIXSUB01" });
+  check(
+    "adhoc re-evaluate skips without force",
+    (again.body.skipped ?? []).some((s) => s.id === "FIXSUB01" && s.reason === "already_judged"),
+  );
+  const forced = await post("/api/judge", { channel_id: "FIXSUB01", force: true });
+  check(
+    "adhoc force re-judges",
+    (forced.body.judged ?? []).some((j) => j.id === "FIXSUB01"),
+  );
+  const unknownEval = await post("/api/judge", { channel_id: "NOPE" });
+  check("adhoc evaluate unknown channel -> 404", unknownEval.status === 404);
+
   // 2. judge: every candidate scored
   const judge = await post("/api/judge", {});
   check("judge 200", judge.status === 200);
   const passCount = judge.body.judged?.filter((j) => j.verdict === "pass").length ?? 0;
-  check("judged all candidates", (judge.body.judged?.length ?? 0) >= 8, `${judge.body.judged?.length} judged`);
+  check("judged all candidates", (judge.body.judged?.length ?? 0) >= 7, `${judge.body.judged?.length} judged`);
+  check(
+    "adhoc-judged channel skipped in batch",
+    (judge.body.skipped ?? []).some((s) => s.id === "FIXSUB01"),
+  );
   check("at least one pass verdict", passCount >= 1, `${passCount} pass`);
 
   // 3. preview: candidate detail carries what a human needs to route
@@ -87,6 +112,9 @@ try {
     const after = (await get("/api/candidates")).candidates.find((c) => c.id === id);
     check(`status ${id} -> ${want}`, after?.status === want, `got ${after?.status}`);
   }
+
+  const routedEval = await post("/api/judge", { channel_id: "FIXPL03" });
+  check("adhoc evaluate on routed channel -> 409", routedEval.status === 409);
 
   // 5. expand: accepted node re-expands; rejected stays filtered
   const exp = await post("/api/expand", { channel_id: "FIXPL03" });

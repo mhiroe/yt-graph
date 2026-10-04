@@ -31,4 +31,13 @@ export interface SourceAdapter {
    * only adapters with a live session (ContentHub) provide it.
    */
   mySubscriptions?(): Promise<SourceChannel[]>;
+
+  /**
+   * Comment-author channels on a channel's recent videos — the entry point
+   * for finding "similar viewers" (subscription-gap CF). Optional: only
+   * adapters whose surface exposes comment authors implement it
+   * (ContentHub read-kind `yt.videos.comments`; author channel ids are the
+   * pending addendum — absent ids degrade to an empty surface).
+   */
+  commentAuthorChannels?(channelId: string, limit?: number): Promise<SourceChannel[]>;
 }

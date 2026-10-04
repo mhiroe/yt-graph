@@ -32,4 +32,6 @@ export type DiscoverySource =
   | "playlists"
   | "chappy"
   | "manual"
-  | "fixture";
+  | "fixture"
+  | "edge_walk"
+  | "subscription_gap";

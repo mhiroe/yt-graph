@@ -26,19 +26,24 @@ function seedContext(handle: DatabaseSync): { id: string; title: string; fingerp
 }
 
 /**
- * Judge every status='candidate' channel that has no judgment row yet.
+ * Judge channels: with `target`, a single human-picked channel (adhoc mode —
+ * "この候補を今評価"), re-judging only under `force`; without it, every
+ * status='candidate' channel that has no judgment row yet.
  * Persisted verdicts drive which candidates are previewable.
  */
 export async function runJudgment(
   judge: JudgeAdapter = createJudgeAdapter(),
   handle: DatabaseSync = defaultDb,
+  target?: { channelId: string; force?: boolean },
 ): Promise<JudgeRunResult> {
   const seed = seedContext(handle);
   if (!seed) throw new Error("no seed channel — run discovery first");
 
-  const candidates = handle
-    .prepare("select * from channel where status = 'candidate' order by id")
-    .all() as unknown as ChannelRow[];
+  const candidates = (
+    target
+      ? handle.prepare("select * from channel where id = ?").all(target.channelId)
+      : handle.prepare("select * from channel where status = 'candidate' order by id").all()
+  ) as unknown as ChannelRow[];
   const judged = latestJudgments(handle);
   const sources = new Map<string, string[]>();
   for (const r of handle
@@ -51,7 +56,7 @@ export async function runJudgment(
 
   const out: JudgeRunResult = { judge: judge.name, judged: [], skipped: [] };
   for (const c of candidates) {
-    if (judged.has(c.id)) {
+    if (judged.has(c.id) && !target?.force) {
       out.skipped.push({ id: c.id, reason: "already_judged" });
       continue;
     }

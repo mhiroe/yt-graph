@@ -11,9 +11,12 @@
     "lint": "tsc --noEmit",
     "smoke": "node scripts/smoke.mjs",
     "accept": "node scripts/accept.mjs",
+    "check:edgewalk": "tsx scripts/check-edgewalk.ts",
+    "check:gapcf": "tsx scripts/check-gapcf.ts",
     "probe:source": "tsx scripts/probe-source.ts",
     "probe:contenthub": "tsx scripts/probe-contenthub.ts",
-    "judge": "tsx scripts/run-judge.ts"
+    "judge": "tsx scripts/run-judge.ts",
+    "export:adopted": "tsx scripts/export-adopted.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
