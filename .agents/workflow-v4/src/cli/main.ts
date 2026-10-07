@@ -143,6 +143,8 @@ export function cliCapabilities(repositoryIdValue: string): WorkflowCapabilities
     "operation.get_receipt",
     // 7b gap 2。operation_id を失った client が receipt へ戻れる口。
     "operation.list",
+    "component.list",
+    "wish_query.preflight",
     "relation.list_outgoing",
     "relation.find_outgoing_to",
   ]);

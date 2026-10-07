@@ -16,6 +16,7 @@ export * from "./sql/document_projection.ts";
 export * from "./sql/replication.ts";
 export * from "./sql/cross_repo.ts";
 export * from "./sql/iterations.ts";
+export * from "./wish_query.ts";
 
 // Harness。**共有 contract ではない。**
 // wishboard は planner / doit / done を走らせないので、artifact へ入れない。

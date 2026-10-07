@@ -26,6 +26,14 @@ dependencies:
   - .agents/skills/retro
   - .agents/skills/retro/SKILL.md
   - .agents/skills/retro/agents/openai.yaml
+  - .agents/skills/wish-query
+  - .agents/skills/wish-query/SKILL.md
+  - .agents/skills/wish-query/agents/openai.yaml
+  - .agents/skills/wish-query/scripts/wish_query.ts
+  - .agents/skills/wish-tidy
+  - .agents/skills/wish-tidy/SKILL.md
+  - .agents/skills/wish-tidy/agents/openai.yaml
+  - .agents/skills/wish-tidy/scripts/wish_tidy.ts
   - .agents/skills/workflow-v4-contract
   - .agents/skills/workflow-v4-contract/SKILL.md
   - .agents/skills/workflow-v4-contract/agents/openai.yaml
@@ -42,6 +50,14 @@ dependencies:
   - .claude/skills/retro
   - .claude/skills/retro/SKILL.md
   - .claude/skills/retro/agents/openai.yaml
+  - .claude/skills/wish-query
+  - .claude/skills/wish-query/SKILL.md
+  - .claude/skills/wish-query/agents/openai.yaml
+  - .claude/skills/wish-query/scripts/wish_query.ts
+  - .claude/skills/wish-tidy
+  - .claude/skills/wish-tidy/SKILL.md
+  - .claude/skills/wish-tidy/agents/openai.yaml
+  - .claude/skills/wish-tidy/scripts/wish_tidy.ts
   - .claude/skills/workflow-v4-contract
   - .claude/skills/workflow-v4-contract/SKILL.md
   - .claude/skills/workflow-v4-contract/agents/openai.yaml
@@ -55,6 +71,12 @@ dependencies:
     .agents/skills/planner/agents/openai.yaml: sha256:b4d1c0a92f68e8d57ab04ec62216d9ba0a957c809d71db29cf835f0e199c6336
     .agents/skills/retro/SKILL.md: sha256:36a553b3120e541d657703df3807be100487745dfa1341433d66132fe4634faf
     .agents/skills/retro/agents/openai.yaml: sha256:aa51ea1c4211aaa065def9ab50bbe6b9b274feb65a839f4ee6e7778b0f00fb6f
+    .agents/skills/wish-query/SKILL.md: sha256:33baa0c62ed799b258e63b919bd4b385820e52f11f0d824c23c20ebeb63513c6
+    .agents/skills/wish-query/agents/openai.yaml: sha256:ed77089d335905a7379b2a8837424ea1c11d2803ed17579b19c8e5c60c72663c
+    .agents/skills/wish-query/scripts/wish_query.ts: sha256:aada652ca33471a5292bb461063a01c50f0e673f932203d76d863be7772309be
+    .agents/skills/wish-tidy/SKILL.md: sha256:4d53777a88e4e8ce242786a438bad3270c4a3eee1a5b2026ccdfb38a88f01725
+    .agents/skills/wish-tidy/agents/openai.yaml: sha256:389f9e80162f3ba2c813cbb16caffb6f230bcc4de5052c1bc40c4ac3183a0389
+    .agents/skills/wish-tidy/scripts/wish_tidy.ts: sha256:e9e70171019da3a50f8af886d8cbd136dd18224c716c1081cf5517125b3a0d4a
     .agents/skills/workflow-v4-contract/SKILL.md: sha256:ed518c9936be18dd0708f96523f698ab250319a0831d944caa2424bc5f7b7052
     .agents/skills/workflow-v4-contract/agents/openai.yaml: sha256:1c28d78d52fed3248517b73bc86a322a4f2ae81e07f31062ddcbf6808ce0b6fa
     .agents/skills/workflow-v4-contract/references/contract-format.md: sha256:b2e081f64cf41daa9d2590973aa9f604801fddc08cffe13e35fef51aa2c740d4
@@ -66,6 +88,12 @@ dependencies:
     .claude/skills/planner/agents/openai.yaml: sha256:b4d1c0a92f68e8d57ab04ec62216d9ba0a957c809d71db29cf835f0e199c6336
     .claude/skills/retro/SKILL.md: sha256:36a553b3120e541d657703df3807be100487745dfa1341433d66132fe4634faf
     .claude/skills/retro/agents/openai.yaml: sha256:aa51ea1c4211aaa065def9ab50bbe6b9b274feb65a839f4ee6e7778b0f00fb6f
+    .claude/skills/wish-query/SKILL.md: sha256:33baa0c62ed799b258e63b919bd4b385820e52f11f0d824c23c20ebeb63513c6
+    .claude/skills/wish-query/agents/openai.yaml: sha256:ed77089d335905a7379b2a8837424ea1c11d2803ed17579b19c8e5c60c72663c
+    .claude/skills/wish-query/scripts/wish_query.ts: sha256:aada652ca33471a5292bb461063a01c50f0e673f932203d76d863be7772309be
+    .claude/skills/wish-tidy/SKILL.md: sha256:4d53777a88e4e8ce242786a438bad3270c4a3eee1a5b2026ccdfb38a88f01725
+    .claude/skills/wish-tidy/agents/openai.yaml: sha256:389f9e80162f3ba2c813cbb16caffb6f230bcc4de5052c1bc40c4ac3183a0389
+    .claude/skills/wish-tidy/scripts/wish_tidy.ts: sha256:e9e70171019da3a50f8af886d8cbd136dd18224c716c1081cf5517125b3a0d4a
     .claude/skills/workflow-v4-contract/SKILL.md: sha256:ed518c9936be18dd0708f96523f698ab250319a0831d944caa2424bc5f7b7052
     .claude/skills/workflow-v4-contract/agents/openai.yaml: sha256:1c28d78d52fed3248517b73bc86a322a4f2ae81e07f31062ddcbf6808ce0b6fa
     .claude/skills/workflow-v4-contract/references/contract-format.md: sha256:b2e081f64cf41daa9d2590973aa9f604801fddc08cffe13e35fef51aa2c740d4
@@ -180,6 +208,78 @@ deployments:
   - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
   active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
   content_hash: sha256:aa51ea1c4211aaa065def9ab50bbe6b9b274feb65a839f4ee6e7778b0f00fb6f
+- kind: project-relative
+  target: claude
+  value: .claude/skills/wish-query
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: null
+- kind: project-relative
+  target: claude
+  value: .claude/skills/wish-query/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:33baa0c62ed799b258e63b919bd4b385820e52f11f0d824c23c20ebeb63513c6
+- kind: project-relative
+  target: claude
+  value: .claude/skills/wish-query/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:ed77089d335905a7379b2a8837424ea1c11d2803ed17579b19c8e5c60c72663c
+- kind: project-relative
+  target: claude
+  value: .claude/skills/wish-query/scripts/wish_query.ts
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:aada652ca33471a5292bb461063a01c50f0e673f932203d76d863be7772309be
+- kind: project-relative
+  target: claude
+  value: .claude/skills/wish-tidy
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: null
+- kind: project-relative
+  target: claude
+  value: .claude/skills/wish-tidy/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:4d53777a88e4e8ce242786a438bad3270c4a3eee1a5b2026ccdfb38a88f01725
+- kind: project-relative
+  target: claude
+  value: .claude/skills/wish-tidy/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:389f9e80162f3ba2c813cbb16caffb6f230bcc4de5052c1bc40c4ac3183a0389
+- kind: project-relative
+  target: claude
+  value: .claude/skills/wish-tidy/scripts/wish_tidy.ts
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:e9e70171019da3a50f8af886d8cbd136dd18224c716c1081cf5517125b3a0d4a
 - kind: project-relative
   target: claude
   value: .claude/skills/workflow-v4-contract
@@ -324,6 +424,78 @@ deployments:
   - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
   active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
   content_hash: sha256:aa51ea1c4211aaa065def9ab50bbe6b9b274feb65a839f4ee6e7778b0f00fb6f
+- kind: project-relative
+  target: codex
+  value: .agents/skills/wish-query
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: null
+- kind: project-relative
+  target: codex
+  value: .agents/skills/wish-query/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:33baa0c62ed799b258e63b919bd4b385820e52f11f0d824c23c20ebeb63513c6
+- kind: project-relative
+  target: codex
+  value: .agents/skills/wish-query/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:ed77089d335905a7379b2a8837424ea1c11d2803ed17579b19c8e5c60c72663c
+- kind: project-relative
+  target: codex
+  value: .agents/skills/wish-query/scripts/wish_query.ts
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:aada652ca33471a5292bb461063a01c50f0e673f932203d76d863be7772309be
+- kind: project-relative
+  target: codex
+  value: .agents/skills/wish-tidy
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: null
+- kind: project-relative
+  target: codex
+  value: .agents/skills/wish-tidy/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:4d53777a88e4e8ce242786a438bad3270c4a3eee1a5b2026ccdfb38a88f01725
+- kind: project-relative
+  target: codex
+  value: .agents/skills/wish-tidy/agents/openai.yaml
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:389f9e80162f3ba2c813cbb16caffb6f230bcc4de5052c1bc40c4ac3183a0389
+- kind: project-relative
+  target: codex
+  value: .agents/skills/wish-tidy/scripts/wish_tidy.ts
+  runtime: null
+  scope: project
+  owners:
+  - /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  active_owner: /Users/m/Documents/dotfiles/apm-packages/workflow-v4-runtime
+  content_hash: sha256:e9e70171019da3a50f8af886d8cbd136dd18224c716c1081cf5517125b3a0d4a
 - kind: project-relative
   target: codex
   value: .agents/skills/workflow-v4-contract

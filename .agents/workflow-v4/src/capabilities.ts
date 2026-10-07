@@ -23,6 +23,8 @@ export const QUERY_NAMES = [
   // receipt も引けない。**必要なのは client 側の永続化ではなく repo 側の列挙で、
   // client へ持たせると operation の正本が 2 つになる。
   "operation.list",
+  "component.list",
+  "wish_query.preflight",
   "workflow.subscribe_changes",
 ] as const;
 export type QueryName = (typeof QUERY_NAMES)[number];
@@ -56,6 +58,8 @@ export const READ_MODEL_QUERY_NAMES = [
   "activity.list",
   "operation.get_receipt",
   "operation.list",
+  "component.list",
+  "wish_query.preflight",
 ] as const;
 export type ReadModelQueryName = (typeof READ_MODEL_QUERY_NAMES)[number];
 
@@ -63,7 +67,7 @@ export type ReadModelQueryName = (typeof READ_MODEL_QUERY_NAMES)[number];
  * read model contract の version。protocol version とは別に進む。
  * query 名の集合、page の形、cursor の意味が変わったら上げる。
  */
-export const WORKFLOW_READ_MODEL_VERSION: ProtocolVersion = { major: 1, minor: 0 };
+export const WORKFLOW_READ_MODEL_VERSION: ProtocolVersion = { major: 1, minor: 1 };
 
 export type WorkflowCapabilities = {
   readonly protocol_version: ProtocolVersion;

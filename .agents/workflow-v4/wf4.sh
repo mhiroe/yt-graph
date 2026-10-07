@@ -57,7 +57,10 @@ run_cli() {
   repo_id=$(repository_id)
   # --allow-run: iteration.repair の first-commit reconstruction が git log を
   # spawn する (port 未注入環境では従来どおり fail closed)。
-  deno run --allow-read --allow-write --allow-ffi --allow-env --allow-run \
+  # Replace this shell with Core so bounded callers can terminate the whole
+  # request without leaving a grandchild process behind. In command
+  # substitutions/pipelines the function already runs in a subshell.
+  exec deno run --allow-read --allow-write --allow-ffi --allow-env --allow-run \
     "$runtime_dir/src/cli/main.ts" \
     --repository-id "$repo_id" --device-id "$device" \
     --db "$db" --root "$root" \

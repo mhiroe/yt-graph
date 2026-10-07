@@ -148,6 +148,40 @@ export type OperationListPage = {
   readonly has_more: boolean;
 };
 
+export const LISTED_COMPONENT_TITLE_MAX = 240;
+export const LISTED_COMPONENT_LOCATOR_MAX = 512;
+
+/** `component.list` / wish-query が共有する、bounded な projection row。 */
+export type ListedComponent = {
+  readonly component_id: ComponentId;
+  readonly kind: ComponentKind;
+  readonly status?: ComponentState["status"];
+  readonly state_revision: ComponentState["state_revision"];
+  readonly title_projection?: string;
+  readonly title_truncated: boolean;
+  readonly document_locator?: string;
+  readonly locator_truncated: boolean;
+  readonly birth_iteration?: string;
+  readonly updated_at: string;
+};
+
+export type ComponentListFilter = {
+  readonly component_id?: ComponentId;
+  readonly component_kinds?: readonly ComponentKind[];
+  readonly status?: string;
+  readonly iteration_id?: string;
+  /** Workflow state row の更新時刻。document observation の時刻ではない。 */
+  readonly state_changed_since?: string;
+  /** 1 回で返す上限。caller ごとの上限は dispatch 側がさらに狭める。 */
+  readonly limit?: number;
+};
+
+export type ComponentListPage = {
+  readonly components: readonly ListedComponent[];
+  readonly limit: number;
+  readonly has_more: boolean;
+};
+
 export class SqliteWorkflowStore {
   readonly context: RepositoryContext;
   readonly #driver: SqlDriver;
@@ -453,6 +487,73 @@ export class SqliteWorkflowStore {
     return { operations: listed, limit, has_more: rows.length > limit };
   }
 
+  /**
+   * 既存 `components_overview` projection の bounded read。新しい search table は作らない。
+   * `limit + 1` で切断を見える化し、updated_at + component_id で決定的に並べる。
+   */
+  listComponents(filter: ComponentListFilter = {}): ComponentListPage {
+    const limit = Math.min(Math.max(filter.limit ?? 25, 1), 200);
+    const where: string[] = [];
+    const args: SqlValue[] = [];
+    if (filter.component_id !== undefined) {
+      where.push("c.component_id = ?");
+      args.push(filter.component_id);
+    }
+    if (filter.component_kinds !== undefined && filter.component_kinds.length > 0) {
+      where.push(`c.kind IN (${filter.component_kinds.map(() => "?").join(", ")})`);
+      args.push(...filter.component_kinds);
+    }
+    if (filter.status !== undefined) {
+      where.push("c.status = ?");
+      args.push(filter.status);
+    }
+    if (filter.state_changed_since !== undefined) {
+      where.push("c.updated_at >= ?");
+      args.push(filter.state_changed_since);
+    }
+    if (filter.iteration_id !== undefined) {
+      where.push(
+        "(c.birth_iteration = ? OR EXISTS (SELECT 1 FROM iteration_members im" +
+          " WHERE im.component_id = c.component_id AND im.iteration_id = ?))",
+      );
+      args.push(filter.iteration_id, filter.iteration_id);
+    }
+    const clause = where.length === 0 ? "" : ` WHERE ${where.join(" AND ")}`;
+    const rows = this.#driver
+      .prepare(
+        "SELECT c.component_id, c.kind, c.status, c.state_revision," +
+          ` substr(c.title_projection, 1, ${LISTED_COMPONENT_TITLE_MAX}) AS title_projection,` +
+          ` length(c.title_projection) > ${LISTED_COMPONENT_TITLE_MAX} AS title_truncated,` +
+          ` substr(c.document_locator, 1, ${LISTED_COMPONENT_LOCATOR_MAX}) AS document_locator,` +
+          ` length(c.document_locator) > ${LISTED_COMPONENT_LOCATOR_MAX} AS locator_truncated,` +
+          " c.birth_iteration, c.updated_at" +
+          ` FROM components c${clause}` +
+          " ORDER BY c.updated_at DESC, c.component_id ASC LIMIT ?",
+      )
+      .all(...args, limit + 1);
+    return {
+      components: rows.slice(0, limit).map((row) => this.#toListedComponent(row)),
+      limit,
+      has_more: rows.length > limit,
+    };
+  }
+
+  /**
+   * 複数の read を同じ SQLite snapshot で評価する。BEGIN DEFERRED は row/file を変更しない。
+   * wish-query の subject revision と candidate projection の read race をここで閉じる。
+   */
+  readSnapshot<T>(read: () => T): T {
+    this.#driver.exec("BEGIN DEFERRED");
+    try {
+      const value = read();
+      this.#driver.exec("COMMIT");
+      return value;
+    } catch (cause) {
+      this.#driver.exec("ROLLBACK");
+      throw cause;
+    }
+  }
+
   /** relation の一覧。表示ではなく test と transaction の検証に使う。 */
   /**
    * outgoing relation を parse 済みの `RelationKey` で返す (裁定 root PM 2026-09-15、Slice F1 の O2-1)。
@@ -542,6 +643,29 @@ export class SqliteWorkflowStore {
       status: status.value,
       state_revision: revision.value,
     });
+  }
+
+  #toListedComponent(row: Record<string, unknown>): ListedComponent {
+    const state = this.#toComponentState(row);
+    const updatedAt = rowString(row, "updated_at");
+    if (!state.ok || updatedAt === undefined) {
+      throw new Error(`components の row を parse できない: ${JSON.stringify(row)}`);
+    }
+    const title = rowString(row, "title_projection");
+    const locator = rowString(row, "document_locator");
+    const birthIteration = rowString(row, "birth_iteration");
+    return {
+      component_id: state.value.address.component_id,
+      kind: state.value.kind,
+      ...(state.value.status === undefined ? {} : { status: state.value.status }),
+      state_revision: state.value.state_revision,
+      ...(title === undefined ? {} : { title_projection: title }),
+      title_truncated: (rowInteger(row, "title_truncated") ?? 0) !== 0,
+      ...(locator === undefined ? {} : { document_locator: locator }),
+      locator_truncated: (rowInteger(row, "locator_truncated") ?? 0) !== 0,
+      ...(birthIteration === undefined ? {} : { birth_iteration: birthIteration }),
+      updated_at: updatedAt,
+    };
   }
 }
 

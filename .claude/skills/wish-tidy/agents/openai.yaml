@@ -1,0 +1,4 @@
+interface:
+  display_name: "Wish tidy"
+  short_description: "Trace workflow wish lineage without changing state"
+  default_prompt: "Use $wish-tidy to trace an id or keyword through the current repository's workflow lineage."

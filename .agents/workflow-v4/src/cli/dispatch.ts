@@ -36,7 +36,7 @@ import {
   registerExistingVaultComponent,
   runLocalCommand,
 } from "../sql/transaction.ts";
-import { parseComponentKind, parseRevision } from "../components.ts";
+import { parseComponentKind, parseRevision, parseStatusForKind } from "../components.ts";
 import { isVaultComponentId } from "../vault_ids.ts";
 import { checkChildEntries } from "./check_children.ts";
 import {
@@ -105,6 +105,14 @@ import {
   listAllIterations,
   listIterations,
 } from "../sql/iterations.ts";
+import {
+  buildWishQueryResult,
+  WISH_QUERY_CANDIDATE_MAX,
+  WISH_QUERY_SCAN_MAX,
+  WISH_QUERY_TERM_MAX,
+  WISH_QUERY_TITLE_MAX,
+  wishQueryTerms,
+} from "../wish_query.ts";
 
 /**
  * 終了 code。**安定させる。** 呼び出し側 (skill / script) が分岐に使う。
@@ -133,6 +141,9 @@ export const CLI_REQUEST_KINDS = [
   "operation.get_receipt",
   // 7b gap 2。receipt を 1 件引く口しか無く、operation_id を失うと戻れなかった。
   "operation.list",
+  // Wish-centered read seam. Both operations are bounded and use only the existing projection.
+  "component.list",
+  "wish_query.preflight",
   "document.read_raw",
   // Slice F1 の gap。register 前に `expected_hash` を引く口と、observer 向けの node 一覧。
   "document.inspect_locator",
@@ -277,6 +288,48 @@ function requireString(raw: Record<string, unknown>, name: string): Result<strin
     return err("invalid_field_type", `${name} は string である必要がある`, name);
   }
   return ok(value);
+}
+
+function boundedPositiveInteger(
+  raw: Record<string, unknown>,
+  name: string,
+  fallback: number,
+  maximum: number,
+): Result<number> {
+  const value = raw[name] ?? fallback;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > maximum) {
+    return err(
+      "invalid_field_type",
+      `${name} は 1 以上 ${maximum} 以下の整数である必要がある`,
+      name,
+    );
+  }
+  return ok(value);
+}
+
+function optionalNonEmptyString(
+  raw: Record<string, unknown>,
+  name: string,
+): Result<string | undefined> {
+  const value = raw[name];
+  if (value === undefined) return ok(undefined);
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return err("invalid_field_type", `${name} は空でない string である必要がある`, name);
+  }
+  return ok(value);
+}
+
+function optionalUtcTimestamp(
+  raw: Record<string, unknown>,
+  name: string,
+): Result<string | undefined> {
+  const value = optionalNonEmptyString(raw, name);
+  if (!value.ok || value.value === undefined) return value;
+  const milliseconds = Date.parse(value.value);
+  if (Number.isNaN(milliseconds)) {
+    return err("invalid_field_type", `${name} は ISO-8601 timestamp である必要がある`, name);
+  }
+  return ok(new Date(milliseconds).toISOString());
 }
 
 /**
@@ -546,6 +599,181 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
         ...(limitRaw === undefined ? {} : { limit: limitRaw }),
       });
       return { kind, ok: true, exit_code: CLI_EXIT_OK, result: page };
+    }
+
+    case "component.list": {
+      const componentIdRaw = raw["component_id"];
+      const componentId = componentIdRaw === undefined
+        ? undefined
+        : parseComponentId(componentIdRaw, "component_id");
+      if (componentId !== undefined && !componentId.ok) {
+        return failure(kind, componentId.error, CLI_EXIT_BAD_REQUEST);
+      }
+      const kindRaw = raw["component_kind"];
+      const componentKind = kindRaw === undefined
+        ? undefined
+        : parseComponentKind(kindRaw, "component_kind");
+      if (componentKind !== undefined && !componentKind.ok) {
+        return failure(kind, componentKind.error, CLI_EXIT_BAD_REQUEST);
+      }
+      const status = optionalNonEmptyString(raw, "status");
+      if (!status.ok) return failure(kind, status.error, CLI_EXIT_BAD_REQUEST);
+      if (status.value !== undefined && componentKind !== undefined) {
+        const parsed = parseStatusForKind(componentKind.value, status.value, "status");
+        if (!parsed.ok) return failure(kind, parsed.error, CLI_EXIT_BAD_REQUEST);
+      }
+      if (status.value !== undefined && componentKind === undefined) {
+        const wishStatus = parseStatusForKind("wish", status.value, "status");
+        const taskStatus = parseStatusForKind("task", status.value, "status");
+        if (!wishStatus.ok && !taskStatus.ok) {
+          return failure(kind, wishStatus.error, CLI_EXIT_BAD_REQUEST);
+        }
+      }
+      const iterationId = optionalNonEmptyString(raw, "iteration_id");
+      if (!iterationId.ok) return failure(kind, iterationId.error, CLI_EXIT_BAD_REQUEST);
+      const stateChangedSince = optionalUtcTimestamp(raw, "state_changed_since");
+      if (!stateChangedSince.ok) {
+        return failure(kind, stateChangedSince.error, CLI_EXIT_BAD_REQUEST);
+      }
+      const limit = boundedPositiveInteger(raw, "limit", 25, 100);
+      if (!limit.ok) return failure(kind, limit.error, CLI_EXIT_BAD_REQUEST);
+      const page = ports.store.readSnapshot(() =>
+        ports.store.listComponents({
+          ...(componentId === undefined ? {} : { component_id: componentId.value }),
+          ...(componentKind === undefined ? {} : { component_kinds: [componentKind.value] }),
+          ...(status.value === undefined ? {} : { status: status.value }),
+          ...(iterationId.value === undefined ? {} : { iteration_id: iterationId.value }),
+          ...(stateChangedSince.value === undefined
+            ? {}
+            : { state_changed_since: stateChangedSince.value }),
+          limit: limit.value,
+        })
+      );
+      return {
+        kind,
+        ok: true,
+        exit_code: CLI_EXIT_OK,
+        result: {
+          schema: "wf4.component-list.v1",
+          repository_id: ports.store.context.repository_id,
+          components: page.components,
+          limit: page.limit,
+          truncated: page.has_more,
+        },
+      };
+    }
+
+    case "wish_query.preflight": {
+      const title = requireString(raw, "proposed_title");
+      if (!title.ok) return failure(kind, title.error, CLI_EXIT_BAD_REQUEST);
+      const titleLength = Array.from(title.value).length;
+      if (title.value.trim().length === 0 || titleLength > WISH_QUERY_TITLE_MAX) {
+        return failure(kind, {
+          code: "invalid_field_type",
+          message: `proposed_title は 1 文字以上 ${WISH_QUERY_TITLE_MAX} 文字以下である必要がある`,
+          path: "proposed_title",
+        }, CLI_EXIT_BAD_REQUEST);
+      }
+      const terms = wishQueryTerms(title.value);
+      if (terms.length === 0 || terms.length > WISH_QUERY_TERM_MAX) {
+        return failure(kind, {
+          code: "invalid_field_type",
+          message:
+            `proposed_title の検索 term は 1 個以上 ${WISH_QUERY_TERM_MAX} 個以下である必要がある`,
+          path: "proposed_title",
+        }, CLI_EXIT_BAD_REQUEST);
+      }
+      const scanLimit = boundedPositiveInteger(raw, "scan_limit", 100, WISH_QUERY_SCAN_MAX);
+      if (!scanLimit.ok) return failure(kind, scanLimit.error, CLI_EXIT_BAD_REQUEST);
+      const candidateLimit = boundedPositiveInteger(
+        raw,
+        "candidate_limit",
+        10,
+        WISH_QUERY_CANDIDATE_MAX,
+      );
+      if (!candidateLimit.ok) return failure(kind, candidateLimit.error, CLI_EXIT_BAD_REQUEST);
+      const iterationId = optionalNonEmptyString(raw, "iteration_id");
+      if (!iterationId.ok) return failure(kind, iterationId.error, CLI_EXIT_BAD_REQUEST);
+      const stateChangedSince = optionalUtcTimestamp(raw, "state_changed_since");
+      if (!stateChangedSince.ok) {
+        return failure(kind, stateChangedSince.error, CLI_EXIT_BAD_REQUEST);
+      }
+
+      const subjectRaw = raw["subject_component_id"];
+      const subject = subjectRaw === undefined
+        ? undefined
+        : parseComponentId(subjectRaw, "subject_component_id");
+      if (subject !== undefined && !subject.ok) {
+        return failure(kind, subject.error, CLI_EXIT_BAD_REQUEST);
+      }
+      const expectedRaw = raw["expected_revision"];
+      const expected = expectedRaw === undefined
+        ? undefined
+        : parseRevision(expectedRaw, "expected_revision");
+      if (expected !== undefined && !expected.ok) {
+        return failure(kind, expected.error, CLI_EXIT_BAD_REQUEST);
+      }
+      if (expected !== undefined && subject === undefined) {
+        return failure(kind, {
+          code: "missing_field",
+          message: "expected_revision には subject_component_id が必要",
+          path: "subject_component_id",
+        }, CLI_EXIT_BAD_REQUEST);
+      }
+
+      const parsedProposedId = parseComponentId(title.value.trim(), "proposed_title");
+
+      const snapshot = ports.store.readSnapshot(() => {
+        const subjectState = subject === undefined ? undefined : ports.store.lookup(subject.value);
+        const exactPage = parsedProposedId.ok
+          ? ports.store.listComponents({
+            component_id: parsedProposedId.value,
+            component_kinds: ["wish", "task"],
+            limit: 1,
+          })
+          : undefined;
+        const page = exactPage !== undefined && exactPage.components.length > 0
+          ? exactPage
+          : ports.store.listComponents({
+            component_kinds: ["wish", "task"],
+            ...(iterationId.value === undefined ? {} : { iteration_id: iterationId.value }),
+            ...(stateChangedSince.value === undefined
+              ? {}
+              : { state_changed_since: stateChangedSince.value }),
+            limit: scanLimit.value,
+          });
+        const outgoing = subject === undefined || subjectState === undefined
+          ? []
+          : ports.store.outgoingRelations(subject.value);
+        return { subjectState, page, outgoing };
+      });
+      if (subject !== undefined && snapshot.subjectState === undefined) {
+        return failure(kind, {
+          code: "document_not_found",
+          message: `component ${subject.value} が無い`,
+          path: "subject_component_id",
+        }, CLI_EXIT_NOT_APPLIED);
+      }
+      const result = buildWishQueryResult({
+        repository_id: ports.store.context.repository_id,
+        proposed_title: title.value,
+        ...(subject === undefined ? {} : { subject_component_id: subject.value }),
+        ...(snapshot.subjectState === undefined
+          ? {}
+          : { subject_revision: snapshot.subjectState.state_revision }),
+        ...(expected === undefined ? {} : { expected_revision: expected.value }),
+        components: snapshot.page.components,
+        outgoing_relations: snapshot.outgoing,
+        scan_limit: scanLimit.value,
+        candidate_limit: candidateLimit.value,
+        scan_truncated: snapshot.page.has_more,
+      });
+      return {
+        kind,
+        ok: true,
+        exit_code: result.complete ? CLI_EXIT_OK : CLI_EXIT_NOT_APPLIED,
+        result,
+      };
     }
 
     case "document.read_raw": {

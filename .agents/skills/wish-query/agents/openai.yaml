@@ -1,0 +1,4 @@
+interface:
+  display_name: "Wish query"
+  short_description: "Read-only lookup for related workflow v4 wishes and tasks"
+  default_prompt: "Use $wish-query to check the current repo for an existing wish or task that may already own this outcome."
