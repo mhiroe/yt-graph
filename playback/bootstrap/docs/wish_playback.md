@@ -140,3 +140,118 @@ iteration_created: 2026-09-30T15:58:11.354Z
   が、contract が立つのは extraction 後)。
 - trigger: なし。dokoitsu pipe は dokoitsu 側実装が着た時点で有効化
   (それまでは seam のみ、fail-soft)。
+
+# playback usable pass: 実 feed / 実再生面 / points pipe 配線 (kk build)
+> [!meta]- w-01M4D5NST7
+^w-01M4D5NST7
+
+## ユーザーの要求 (verbatim-intent)
+
+- 2026-10-08 user direction (c-side yt-graph_pm 経由 relay):
+  playback client がまだ使える形になっていなければ kk 側で作る。
+  mockup (bootstrap iteration, w-01M3SGPYH2 の 6 tasks) は完了済み —
+  この wish は「使える client」化の第二ラウンド。
+- 残り legs (direction 列挙): 実 adopted-channel feed (export seam
+  t-01M3RZVVED の実経路)、embed floor を超えた再生面
+  (ul-browser / ContentHub webview)、dokoitsu points pipe 配線。
+- 同日の refined rulings (user verbatim —
+  `.agent-state/decision-2026-10-08-dokoitsu-viewing-limits.md`
+  addendum 参照):
+  - 視聴 app は **yt-client** (dedicated YouTube client over
+    yt-graph-adopted channels)。dokoitsu は app を作らない —
+    points/limits contract provider のみ (contract-level coordination
+    のみ、app 側の連絡は持たない)。
+    - yt-client repo は両 host に未存在 (検証済み); この repo の
+      playback/bootstrap mockup が起点であり、ここから続ける
+      (separable 設計、将来の repo split は planner+user 判断)。
+  - 製品形態: tinder 的 swipe/route UX は一部品 — client 本体は
+    curated channel set 上の **探索/発見 feature** (search-linked
+    preview、keyword stock)。
+
+## scope (usable pass)
+
+- 実 feed 経路: ContentHub session source または seed 投入で store を
+  実データ化 → 人の accept route → `export-adopted` で feed 生成 →
+  playback app が fixture ではなく export を読む (URL 配線込み)。
+- video 解決: export は channel 粒度で videoId を持たない — 再生する
+  video の決め方をこのラウンドで fix する (export への
+  latest-upload 拡張 / channel-page-first UX / per-channel pin の
+  いずれか。open question 参照)。
+- 再生面: `UlBrowserSurface` / `ContentHubWebviewSurface` stub の実装
+  (availability probe + open)。embed floor には YouTube IFrame API の
+  制御 channel を足し、limit / rhythm が再生中に pause/block できる
+  ようにする (mockup は open gate のみ)。
+- points pipe: contract 確定済み
+  (decision-2026-10-08-dokoitsu-viewing-limits.md; 127.0.0.1
+  `GET /parental/allowance` + `POST /parental/spend`) に沿う
+  `HttpPointsGate` adapter。dokoitsu 側 t-01M4D2KWBD が user readiness
+  待ちの間は shadow ledger が実効 cap — 配線 task は dependent 扱い。
+- kk acceptance: standalone smoke — app 起動、実 feed が採用 channel のみ
+  列挙、best surface で再生 open、limit/lock/points/rhythm が enforcement
+  する。
+- 探索/発見 UX (yt-client 本体定義): curated channel set 上の探索面 —
+  search-linked preview (keyword で candidate channel/video を preview
+  し route へ繋ぐ)、keyword stock (観たい語の保存・再利用)、swipe
+  accept/reject route はその中の一部品として実装。
+
+## 明示的に scope 外
+
+- dokoitsu 側実装 (points authority / ledger / 設定 UI) — partner scope。
+- ContentHub / ul-browser 本体の改修 — adapter 側の利用だけ。
+- yt-graph core の curation 判定ロジック変更 (accept/reject route は
+  人の操作、変えない)。
+
+## task 分解 (usable pass)
+
+(tasks minted via document.create_task — see nodes below)
+
+- [ ] store populate + export 実走: anime starter list seed 投入 → 人の accept route → adopted export 生成 (populate 経路 = seed, user ruling 2026-10-08) ^t-01M4D5Q6VX
+- [ ] 実 feed 配線: playback app を export 出力に接続 (VITE_PLAYBACK_EXPORT_URL / public drop) し adopted-only render を検証 ^t-01M4D5QFDN
+- [ ] channel-level surface 実装: 再生対象は channel 粒度 (video-level 探索は求めない — user ruling 2026-10-08)。OpenRequest を channel 化し、embed floor は uploads playlist (UU*) embed で channel 丸ごと再生可能にする ^t-01M4D5QFYG
+- [ ] 再生面 real host: ContentHubWebviewSurface の availability probe + open 実装 (ul-browser は user ruling 2026-10-08 で今ラウンド対象外 — fallback 順序は維持) ^t-01M4D5QGFE
+- [ ] embed floor 制御 channel: YouTube IFrame API で limit/rhythm の pause/block を実装 ^t-01M4D5QH0M
+- [ ] HttpPointsGate adapter: dokoitsu 127.0.0.1 allowance/spend contract 配線 (dependent: t-01M4D2KWBD readiness 後) ^t-01M4D5QHJ6
+- [ ] kk acceptance smoke: standalone e2e — 実 feed 列挙 / 再生 open / limit+lock+points+rhythm enforcement ^t-01M4D5QJ46
+- [ ] 探索/発見 UX: curated channel set 上の search-linked preview + keyword stock + swipe route 部品 (yt-client 本体定義) ^t-01M4D609MF
+
+## 受け入れ条件
+
+- `export-adopted` 実走の出力を playback app が読み、採用 channel のみが
+  列挙される (fixture fallback は接続断時のみ)。
+- video 再生が embed floor 以外の surface でも開くか、ul-browser 不可が
+  検証付きで結論づく (fallback 順序は fixed)。
+- 30 分 rhythm と limit が再生中の動画を実際に止める (IFrame API 等の
+  制御 channel)。
+- dokoitsu 未接続で shadow ledger cap が効き、接続時は daemon の
+  remainingMinutes が authoritative になる設計が contract と一致。
+- kk 上で standalone smoke が通る。
+
+## open questions
+
+- populate 経路: **answered 2026-10-08 (gm relay)** — anime starter
+  list (`.agent-state/anime-channels-2026-09-29.md`) seed 投入 + 人の
+  accept route。ContentHub discovery run はこのラウンドでは使わない。
+- videoId 解決: **answered 2026-10-08 (in-pane)** — channel 粒度まで;
+  video-level で面白いものを見つける機能は求めない。再生は
+  channel-page-first (embed floor は channel uploads playlist
+  `UU<channelId>` embed で対応可 — sampleVideoId 拡張は不要)。
+- ul-browser 実検証: **answered 2026-10-08 (gm relay) — no**、今
+  ラウンド対象外。real host は ContentHub webview、fallback embed。
+- 再生 session の account: **answered 2026-10-08 (in-pane)** — 専用
+  account login あり。spec_product の専用 account 方針を再生面にも
+  適用する (playback host = ContentHub webview 内の dedicated-account
+  session; embed floor もその session 内で動く)。
+- points pipe task の扱い: dependent mint (dokoitsu readiness 待ち) で
+  進める提案 — user 判断 (未回答、default = dependent parked)。
+
+## cross-wish dependencies
+
+- **blocked by (soft)**: dokoitsu `t-01M4D2KWBD` の user readiness —
+  points pipe の server 側のみ。他 leg は非依存。
+- internal: export seam `t-01M3RZVVED` (done) の wire 形を consume。
+  export の videoId 拡張が必要なら post-PoC wish (w-01M3RZSXN0) 側の
+  contract 変更として扱う。
+- cross-repo: ContentHub webview surface (ContentHub repo)、ul-browser
+  binary (`~/Documents/ul-browser`) の availability。
+- related: viewing-limits contract —
+  `.agent-state/decision-2026-10-08-dokoitsu-viewing-limits.md`。
