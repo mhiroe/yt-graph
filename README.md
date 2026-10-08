@@ -69,6 +69,13 @@ grow a navigable graph of similar / interesting channels.
   default), 30/10 viewing rhythm, and an iframe embed as the playback
   surface floor. Env: `VITE_PLAYBACK_FEED` (`auto`|`export`|`fixture`),
   `VITE_PLAYBACK_EXPORT_URL` (default `/feed-export.json`).
+  Real feed wiring: `pnpm sync:feed` copies the core export
+  (`docs/iterations/bootstrap/app/data/export/adopted-channels.json`) into
+  `public/feed-export.json` — re-run after each `export:adopted`. A direct
+  `VITE_PLAYBACK_EXPORT_URL=http://localhost:8787/api/export/adopted` is
+  possible but the core API sends no CORS headers, so the drop is the working
+  path from the browser today. `pnpm check:feed` boots a throwaway vite and
+  verifies adopted-only render + degraded-fixture fallback.
 
 ## script / app usage
 
@@ -95,6 +102,12 @@ grow a navigable graph of similar / interesting channels.
 - curiosity profile seam: `YTG_PROFILE=auto|fixture|off` (auto = fail-soft
   absent profile until a real dokoitsu source lands; fixture = canned
   profile for dev/checks)
+- `pnpm seed:import [listPath]` — load a hand-curated channel list
+  (`- <title> | UC…` lines, default `.agent-state/anime-channels-2026-09-29.md`)
+  into the store as `candidate` rows with `manual` evidence. Seeds land as
+  candidates for the human accept route, never auto-accepted. Honors `YTG_DB`
+  (default `:memory:` — pass the real `data/yt-graph.sqlite` path to populate
+  the live store)
 - `pnpm export:adopted [outPath]` — dump the adopted-channel export contract
   (`{generated_at, channels:[…]}` of `accepted` channels only) to a JSON file
   (default `data/export/adopted-channels.json`); the same document is served

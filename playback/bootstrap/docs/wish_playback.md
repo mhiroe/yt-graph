@@ -181,11 +181,11 @@ iteration_created: 2026-09-30T15:58:11.354Z
   (availability probe + open)。embed floor には YouTube IFrame API の
   制御 channel を足し、limit / rhythm が再生中に pause/block できる
   ようにする (mockup は open gate のみ)。
-- points pipe: contract 確定済み
-  (decision-2026-10-08-dokoitsu-viewing-limits.md; 127.0.0.1
-  `GET /parental/allowance` + `POST /parental/spend`) に沿う
-  `HttpPointsGate` adapter。dokoitsu 側 t-01M4D2KWBD が user readiness
-  待ちの間は shadow ledger が実効 cap — 配線 task は dependent 扱い。
+- points pipe: contract 確定・dokoitsu 実装済み
+  (decision-2026-10-08-dokoitsu-viewing-limits.md; dokoitsu main
+  `27c7bfd`, 127.0.0.1:8787 `GET /parental/allowance` +
+  `POST /parental/spend`) に沿う `HttpPointsGate` adapter。
+  未接続時は shadow ledger が実効 cap (fail-soft 維持)。
 - kk acceptance: standalone smoke — app 起動、実 feed が採用 channel のみ
   列挙、best surface で再生 open、limit/lock/points/rhythm が enforcement
   する。
@@ -205,21 +205,21 @@ iteration_created: 2026-09-30T15:58:11.354Z
 
 (tasks minted via document.create_task — see nodes below)
 
-- [ ] store populate + export 実走: anime starter list seed 投入 → 人の accept route → adopted export 生成 (populate 経路 = seed, user ruling 2026-10-08) ^t-01M4D5Q6VX
-- [ ] 実 feed 配線: playback app を export 出力に接続 (VITE_PLAYBACK_EXPORT_URL / public drop) し adopted-only render を検証 ^t-01M4D5QFDN
+- [done] store populate + export 実走: anime starter list seed 投入 → 人の accept route → adopted export 生成 (populate 経路 = seed, user ruling 2026-10-08) ^t-01M4D5Q6VX
+- [done] 実 feed 配線: playback app を export 出力に接続 (VITE_PLAYBACK_EXPORT_URL / public drop) し adopted-only render を検証 ^t-01M4D5QFDN
 - [ ] channel-level surface 実装: 再生対象は channel 粒度 (video-level 探索は求めない — user ruling 2026-10-08)。OpenRequest を channel 化し、embed floor は uploads playlist (UU*) embed で channel 丸ごと再生可能にする ^t-01M4D5QFYG
 - [ ] 再生面 real host: ContentHubWebviewSurface の availability probe + open 実装 (ul-browser は user ruling 2026-10-08 で今ラウンド対象外 — fallback 順序は維持) ^t-01M4D5QGFE
 - [ ] embed floor 制御 channel: YouTube IFrame API で limit/rhythm の pause/block を実装 ^t-01M4D5QH0M
-- [ ] HttpPointsGate adapter: dokoitsu 127.0.0.1 allowance/spend contract 配線 (dependent: t-01M4D2KWBD readiness 後) ^t-01M4D5QHJ6
+- [ ] HttpPointsGate adapter: dokoitsu 127.0.0.1:8787 `/parental` contract 配線 — contract LIVE (dokoitsu@27c7bfd, `docs/spec_parental.md`)。spend ms=delta (任意 `id` で retry dedupe、replay=`applied:false`)、policy=`v1`、enforced break は `remainingMinutes:0` + `note` に break-until、CORS は localhost/127.0.0.1 any-port + `Origin: null` ^t-01M4D5QHJ6
 - [ ] kk acceptance smoke: standalone e2e — 実 feed 列挙 / 再生 open / limit+lock+points+rhythm enforcement ^t-01M4D5QJ46
-- [ ] 探索/発見 UX: curated channel set 上の search-linked preview + keyword stock + swipe route 部品 (yt-client 本体定義) ^t-01M4D609MF
+- [ ] 探索/発見 UX: curated channel set 上の search-linked preview + keyword stock + swipe route 部品 (yt-client 本体定義)。user image (2026-10-08): swipe route は Tinder-like カード UI — 恋活アプリ的にカードを左右にどんどんスワイプして like を押し、好きそうなものを選ぶ連続操作。design pass 先行 — TL が視聴 client としての画面案 (channel 一覧 / 再生レイアウト / 探索導線) を提示し、user が方向を決めてから実装に入る ^t-01M4D609MF
 
 ## 受け入れ条件
 
 - `export-adopted` 実走の出力を playback app が読み、採用 channel のみが
   列挙される (fixture fallback は接続断時のみ)。
-- video 再生が embed floor 以外の surface でも開くか、ul-browser 不可が
-  検証付きで結論づく (fallback 順序は fixed)。
+- video 再生が embed floor 以外の surface (ContentHub webview) でも
+  開く (fallback 順序は fixed; ul-browser は今ラウンド対象外)。
 - 30 分 rhythm と limit が再生中の動画を実際に止める (IFrame API 等の
   制御 channel)。
 - dokoitsu 未接続で shadow ledger cap が効き、接続時は daemon の
@@ -241,13 +241,15 @@ iteration_created: 2026-09-30T15:58:11.354Z
   account login あり。spec_product の専用 account 方針を再生面にも
   適用する (playback host = ContentHub webview 内の dedicated-account
   session; embed floor もその session 内で動く)。
-- points pipe task の扱い: dependent mint (dokoitsu readiness 待ち) で
-  進める提案 — user 判断 (未回答、default = dependent parked)。
+- points pipe task の扱い: **resolved 2026-10-08** — dokoitsu
+  `t-01M4D2KWBD` landed (main `27c7bfd`, live-verified on c)。
+  `HttpPointsGate` は unpark、kk acceptance smoke までに配線。
 
 ## cross-wish dependencies
 
-- **blocked by (soft)**: dokoitsu `t-01M4D2KWBD` の user readiness —
-  points pipe の server 側のみ。他 leg は非依存。
+- **resolved 2026-10-08**: dokoitsu `t-01M4D2KWBD` landed
+  (main `27c7bfd`) — `/parental` endpoints live on 127.0.0.1:8787。
+  他 leg は非依存。
 - internal: export seam `t-01M3RZVVED` (done) の wire 形を consume。
   export の videoId 拡張が必要なら post-PoC wish (w-01M3RZSXN0) 側の
   contract 変更として扱う。

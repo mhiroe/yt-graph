@@ -16,6 +16,7 @@
     "probe:source": "tsx scripts/probe-source.ts",
     "probe:contenthub": "tsx scripts/probe-contenthub.ts",
     "judge": "tsx scripts/run-judge.ts",
+    "seed:import": "tsx scripts/seed-import.ts",
     "export:adopted": "tsx scripts/export-adopted.ts"
   },
   "dependencies": {
