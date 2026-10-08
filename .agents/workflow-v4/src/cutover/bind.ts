@@ -484,6 +484,221 @@ export function bindAnchors(
 }
 
 /**
+ * `cutover.bind_preview` が報告する checkbox↔DB の食い違い 1 件。
+ *
+ * `driveTaskStatus` と同じ規則で「bind が送る step 数」と「送れない理由」を先に
+ * 計算する。mutation は一切無い — stored の値は `store.lookup` の読み取りだけ。
+ */
+export type BindPreviewDivergence = {
+  readonly id: string;
+  readonly locator: string;
+  readonly checkbox: string;
+  /** COMPONENTS に未登録の anchor は `"unregistered"` (bind は register 後に plan から駆動する)。 */
+  readonly stored: TaskStatus | "unregistered";
+  readonly target: TaskStatus;
+  readonly outcome:
+    | "would_apply"
+    | "status_ahead_terminal"
+    | "status_ahead";
+  /** bind が送る予定の typed step 数。unregistered は register 後の plan 起点で数える。 */
+  readonly steps: number;
+  readonly detail: string;
+};
+
+export type BindPreviewReport = {
+  readonly files_scanned: number;
+  readonly anchors_found: number;
+  /** COMPONENTS に無い vault anchor の数 (bind なら register される)。 */
+  readonly would_register: number;
+  /** projectable な観測を持つ anchor の数 (bind なら observe が流れる)。 */
+  readonly would_observe: number;
+  /** bind が送る予定の status 遷移 step 総数。 */
+  readonly status_transitions_planned: number;
+  /** checkbox の示す status と stored status が食い違う task anchor。 */
+  readonly divergent: readonly BindPreviewDivergence[];
+  readonly findings: readonly BindFinding[];
+  readonly verdict: "ok" | "partial";
+  readonly read_only: true;
+};
+
+/**
+ * bind の dry-run — anchor の分類と checkbox→status 差分を**書き込み無しで**計算する。
+ *
+ * 分類 (foreign / unclaimed / invalid / duplicate) と status 規則は `bindAnchors` /
+ * `driveTaskStatus` と同じ表を共有する — preview が別ルールを持つと「preview が ok を
+ * 出したのに bind が動く」系を作る。register / observe / typed command は 1 件も
+ * 送らないので、op journal には何も残らない。
+ *
+ * 検出できるのは **task の checkbox↔status 差分だけ**。wish の status は doc の
+ * checkbox に載らないので preview の対象外 (bind 側も wish status を checkbox から
+ * 駆動しない — 同じ限界)。
+ */
+export function previewBind(
+  store: SqliteWorkflowStore,
+  scan: ScanResult,
+): BindPreviewReport {
+  const findings: BindFinding[] = [];
+  const divergent: BindPreviewDivergence[] = [];
+  let wouldRegister = 0;
+  let wouldObserve = 0;
+  let stepsPlanned = 0;
+
+  const duplicates = new Set(scan.duplicates);
+  const reportedDuplicate = new Set<string>();
+
+  for (const anchor of scan.anchors) {
+    if (anchorIntent(anchor) === "foreign") {
+      findings.push({
+        id: anchor.id,
+        category: "foreign",
+        detail: `${anchor.locator} の id は vault の identity ではない (m/w/t prefix 無し)`,
+      });
+      continue;
+    }
+    if (anchor.node === "unclaimed") {
+      findings.push({
+        id: anchor.id,
+        category: "unclaimed",
+        detail: `${anchor.path} の standalone anchor はどの node の identity にも属さない`,
+      });
+      continue;
+    }
+    if (!anchor.vault_shaped) {
+      findings.push({
+        id: anchor.id,
+        category: "invalid",
+        detail: `${anchor.locator} の id は vault 形 (<m|w|t>-<Crockford base32 10 桁>) でない`,
+      });
+      continue;
+    }
+    if (duplicates.has(anchor.id)) {
+      if (!reportedDuplicate.has(anchor.id)) {
+        reportedDuplicate.add(anchor.id);
+        const locators = (scan.by_id.get(anchor.id) ?? []).map((entry) => entry.locator);
+        findings.push({
+          id: anchor.id,
+          category: "duplicate",
+          detail: `id が ${locators.length} か所にある (${locators.join(", ")})。両方 skip`,
+        });
+      }
+      continue;
+    }
+    const kind = anchor.kind_hint;
+    if (kind === undefined) continue;
+
+    const componentId = parseComponentId(anchor.id, "component_id");
+    if (!componentId.ok) continue;
+    const existing = store.lookup(componentId.value);
+    if (existing === undefined) {
+      wouldRegister += 1;
+    } else if (existing.kind !== kind) {
+      // 登録済み kind と anchor prefix の食い違い — bind では errors に畳む系。
+      findings.push({
+        id: anchor.id,
+        category: "status_unmapped",
+        detail: `登録済み kind ${existing.kind} が anchor の prefix (${kind}) と一致しない`,
+      });
+      continue;
+    }
+
+    if (anchor.body_hash === undefined) {
+      findings.push({
+        id: anchor.id,
+        category: "projection_skipped",
+        detail: `${anchor.locator} の body_hash が取れないため observe を送らない`,
+      });
+    } else {
+      wouldObserve += 1;
+    }
+
+    if (anchor.node !== "task") continue;
+    const checkbox = anchor.checkbox_state ?? "";
+    const target = CHECKBOX_STATUS[checkbox];
+    if (target === undefined) {
+      findings.push({
+        id: anchor.id,
+        category: "status_unmapped",
+        detail: `checkbox [${checkbox}] に対応する task status が無い。plan のまま`,
+      });
+      continue;
+    }
+    // 未登録なら bind は register して plan から駆動する — preview の起点も plan。
+    const stored: TaskStatus = existing === undefined ? "plan" : (existing.status as TaskStatus);
+    if (stored === target) continue;
+    if (isTerminalTaskStatus(stored)) {
+      divergent.push({
+        id: anchor.id,
+        locator: anchor.locator,
+        checkbox,
+        stored: existing === undefined ? "unregistered" : stored,
+        target,
+        outcome: "status_ahead_terminal",
+        steps: 0,
+        detail: `stored status ${stored} は terminal。checkbox [${checkbox}] の ` +
+          `${target} へは移せない`,
+      });
+      continue;
+    }
+    if (target === "dropped") {
+      divergent.push({
+        id: anchor.id,
+        locator: anchor.locator,
+        checkbox,
+        stored: existing === undefined ? "unregistered" : stored,
+        target,
+        outcome: "would_apply",
+        steps: 1,
+        detail: `checkbox [${checkbox}] -> task.drop 1 step`,
+      });
+      stepsPlanned += 1;
+      continue;
+    }
+    const currentIndex = TASK_ORDER.indexOf(stored);
+    const targetIndex = TASK_ORDER.indexOf(target);
+    if (currentIndex >= targetIndex) {
+      divergent.push({
+        id: anchor.id,
+        locator: anchor.locator,
+        checkbox,
+        stored: existing === undefined ? "unregistered" : stored,
+        target,
+        outcome: "status_ahead",
+        steps: 0,
+        detail: `stored status ${stored} が checkbox [${checkbox}] の ${target} より` +
+          `先にある。戻す transition は無い`,
+      });
+      continue;
+    }
+    const steps = targetIndex - currentIndex;
+    divergent.push({
+      id: anchor.id,
+      locator: anchor.locator,
+      checkbox,
+      stored: existing === undefined ? "unregistered" : stored,
+      target,
+      outcome: "would_apply",
+      steps,
+      detail: `checkbox [${checkbox}] -> ${steps} step (request_ready/start_doing/complete)`,
+    });
+    stepsPlanned += steps;
+  }
+
+  return {
+    files_scanned: scan.sources.size,
+    anchors_found: scan.anchors.length,
+    would_register: wouldRegister,
+    would_observe: wouldObserve,
+    status_transitions_planned: stepsPlanned,
+    divergent,
+    findings,
+    verdict: findings.some((finding) => REQUIRED_ANCHOR_FAILURES.has(finding.category))
+      ? "partial"
+      : "ok",
+    read_only: true,
+  };
+}
+
+/**
  * `document_projection.rebind` の結果 — observe の結果に、観測を導出した anchor の
  * locator / node 分類を添える (呼び出し側が書き換わった位置をそのまま確認できる)。
  */

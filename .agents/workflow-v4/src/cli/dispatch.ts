@@ -71,7 +71,7 @@ import {
   type WishRepositoryResolution,
 } from "./mind_wish_resolver.ts";
 import { scanRepository, type ScanResult, type VaultScanPort } from "../cutover/scan.ts";
-import { bindAnchors, rebindComponent } from "../cutover/bind.ts";
+import { bindAnchors, previewBind, rebindComponent } from "../cutover/bind.ts";
 import { auditCutover } from "../cutover/audit.ts";
 import { isIterationOperation } from "../decide.ts";
 import {
@@ -196,6 +196,9 @@ export const CLI_REQUEST_KINDS = [
   // 結果を検査する (audit)。`vault_scan` port が無い環境では `unsupported_feature`。
   "cutover.scan",
   "cutover.bind",
+  // bind の dry-run — checkbox<->DB の status 食い違いを適用せずに報告する
+  // 読み取り専用 kind (wish-tidy check 3, w-01M3ZDTTDR / t-01M3ZDYSA7)。
+  "cutover.bind_preview",
   "cutover.audit",
   // iPhone write channel 向けの新規 file 作成 (component 採番 + Markdown 作成 +
   // COMPONENTS 登録 + initial projection を 1 request で)。
@@ -1851,6 +1854,7 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
 
     case "cutover.scan":
     case "cutover.bind":
+    case "cutover.bind_preview":
     case "cutover.audit": {
       // `vault_scan` は runtime binding (fs_scan.ts) が注入する port。無い環境は
       // 「処理できない」ので exit 1 — request の形は正しい。
@@ -1887,6 +1891,17 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
             unreadable,
             scan_errors: scan.errors,
           },
+        };
+      }
+      if (kind === "cutover.bind_preview") {
+        // 読み取り専用。projection port には触れず store の lookup と scan 分類だけで
+        // 「bind が何を送るか / 送れないか」を計算する。op journal に何も残らない。
+        const report = previewBind(ports.store, scan);
+        return {
+          kind,
+          ok: report.verdict === "ok",
+          exit_code: report.verdict === "ok" ? CLI_EXIT_OK : CLI_EXIT_NOT_APPLIED,
+          result: { ...report, unreadable, scan_errors: scan.errors },
         };
       }
       if (kind === "cutover.bind") {
