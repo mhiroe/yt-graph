@@ -9,7 +9,8 @@
     "lint": "tsc --noEmit",
     "smoke": "node scripts/smoke.mjs",
     "sync:feed": "node scripts/sync-feed.mjs",
-    "check:feed": "tsx scripts/check-feed-wiring.ts"
+    "check:feed": "tsx scripts/check-feed-wiring.ts",
+    "accept": "tsx scripts/check-accept.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

@@ -76,6 +76,23 @@ grow a navigable graph of similar / interesting channels.
   possible but the core API sends no CORS headers, so the drop is the working
   path from the browser today. `pnpm check:feed` boots a throwaway vite and
   verifies adopted-only render + degraded-fixture fallback.
+  Playback host: `pnpm dev` also mounts a same-origin bridge
+  (`GET/POST /api/playback/surface/*`) that drives the dedicated-account
+  ContentHub yt instance over its file transport — `available()` probes the
+  transport `owner.json` liveness (never writes to a dead owner, which would
+  spawn a visible instance), `open()` lands the webview on the channel page
+  (`yt.channels.get`) and fronts the window (`host.show`). Env:
+  `PLAYBACK_CONTENTHUB_ROOT` / `PLAYBACK_CONTENTHUB_TIMEOUT_MS`. With no live
+  ContentHub instance the surface honestly degrades to the embed floor.
+  Points gate: `VITE_PLAYBACK_DOKOITSU_URL` (default `http://127.0.0.1:8787`)
+  targets the dokoitsu `/parental` contract — from this client :8787 is
+  dokoitsu's; the yt-graph API also defaults there, so when both run move
+  yt-graph via `YTG_API_PORT`. `VITE_PLAYBACK_POINTS=local` forces the
+  offline shadow ledger; `auto` degrades to it when dokoitsu is absent.
+  `pnpm accept` (playback pkg) is the standalone kk e2e — served drop vs core
+  export, surface probe + open, live embed resolution, and the
+  limit/lock/points/rhythm enforcement path replayed seam-level (scratch
+  port, no foreign services).
 
 ## script / app usage
 

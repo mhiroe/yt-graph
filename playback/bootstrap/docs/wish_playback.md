@@ -189,6 +189,10 @@ iteration_created: 2026-09-30T15:58:11.354Z
 - kk acceptance: standalone smoke — app 起動、実 feed が採用 channel のみ
   列挙、best surface で再生 open、limit/lock/points/rhythm が enforcement
   する。
+- 常駐 process を持たない (user direction 2026-10-08): client は
+  launch-on-demand — 静的 bundle + on-demand webview host、視聴に常駐
+  server は要求しない (feed は file drop、dokoitsu は別 app として
+  独立起動、yt-graph API は curation 側専用)。
 - 探索/発見 UX (yt-client 本体定義): curated channel set 上の探索面 —
   search-linked preview (keyword で candidate channel/video を preview
   し route へ繋ぐ)、keyword stock (観たい語の保存・再利用)、swipe
@@ -207,12 +211,12 @@ iteration_created: 2026-09-30T15:58:11.354Z
 
 - [done] store populate + export 実走: anime starter list seed 投入 → 人の accept route → adopted export 生成 (populate 経路 = seed, user ruling 2026-10-08) ^t-01M4D5Q6VX
 - [done] 実 feed 配線: playback app を export 出力に接続 (VITE_PLAYBACK_EXPORT_URL / public drop) し adopted-only render を検証 ^t-01M4D5QFDN
-- [ ] channel-level surface 実装: 再生対象は channel 粒度 (video-level 探索は求めない — user ruling 2026-10-08)。OpenRequest を channel 化し、embed floor は uploads playlist (UU*) embed で channel 丸ごと再生可能にする ^t-01M4D5QFYG
-- [ ] 再生面 real host: ContentHubWebviewSurface の availability probe + open 実装 (ul-browser は user ruling 2026-10-08 で今ラウンド対象外 — fallback 順序は維持) ^t-01M4D5QGFE
-- [ ] embed floor 制御 channel: YouTube IFrame API で limit/rhythm の pause/block を実装 ^t-01M4D5QH0M
-- [ ] HttpPointsGate adapter: dokoitsu 127.0.0.1:8787 `/parental` contract 配線 — contract LIVE (dokoitsu@27c7bfd, `docs/spec_parental.md`)。spend ms=delta (任意 `id` で retry dedupe、replay=`applied:false`)、policy=`v1`、enforced break は `remainingMinutes:0` + `note` に break-until、CORS は localhost/127.0.0.1 any-port + `Origin: null` ^t-01M4D5QHJ6
-- [ ] kk acceptance smoke: standalone e2e — 実 feed 列挙 / 再生 open / limit+lock+points+rhythm enforcement ^t-01M4D5QJ46
-- [ ] 探索/発見 UX: curated channel set 上の search-linked preview + keyword stock + swipe route 部品 (yt-client 本体定義)。user image (2026-10-08): swipe route は Tinder-like カード UI — 恋活アプリ的にカードを左右にどんどんスワイプして like を押し、好きそうなものを選ぶ連続操作。design pass 先行 — TL が視聴 client としての画面案 (channel 一覧 / 再生レイアウト / 探索導線) を提示し、user が方向を決めてから実装に入る ^t-01M4D609MF
+- [done] channel-level surface 実装: 再生対象は channel 粒度 (video-level 探索は求めない — user ruling 2026-10-08)。OpenRequest を channel 化し、embed floor は uploads playlist (UU*) embed で channel 丸ごと再生可能にする ^t-01M4D5QFYG
+- [done] 再生面 real host: ContentHubWebviewSurface の availability probe + open 実装 (ul-browser は user ruling 2026-10-08 で今ラウンド対象外 — fallback 順序は維持) ^t-01M4D5QGFE
+- [done] embed floor 制御 channel: YouTube IFrame API で limit/rhythm の pause/block を実装 ^t-01M4D5QH0M
+- [done] HttpPointsGate adapter: dokoitsu 127.0.0.1:8787 `/parental` contract 配線 — contract LIVE (dokoitsu@27c7bfd, `docs/spec_parental.md`)。spend ms=delta (任意 `id` で retry dedupe、replay=`applied:false`)、policy=`v1`、enforced break は `remainingMinutes:0` + `note` に break-until、CORS は localhost/127.0.0.1 any-port + `Origin: null` ^t-01M4D5QHJ6
+- [done] kk acceptance smoke: standalone e2e — 実 feed 列挙 / 再生 open / limit+lock+points+rhythm enforcement ^t-01M4D5QJ46
+- [done] 探索/発見 UX: curated channel set 上の search-linked preview + keyword stock + swipe route 部品 (yt-client 本体定義)。user image (2026-10-08): swipe route は Tinder-like カード UI — 恋活アプリ的にカードを左右にどんどんスワイプして like を押し、好きそうなものを選ぶ連続操作。design pass 先行 — TL が視聴 client としての画面案 (channel 一覧 / 再生レイアウト / 探索導線) を提示し、user が方向を決めてから実装に入る。対象は探索面に限らず player/再生面の見た目も含む — 検証 UI から視聴 client への polish が目的 (user direction 2026-10-08)。player 要件: シンプルなデザイン、full window 表示と真の全画面表示の両方ができること (user direction 2026-10-08)。design input: chappy consult note `~/.local/share/chappy/consult-ytclient-design.md` (2026-10-08) — 2 screens (Discover↔Watch) + 2 drawers + 1 overlay system、card stack / auto-hide chrome / 2 段階 fullscreen / limits-as-policy overlay の提案。採否は user の方向決定時に ^t-01M4D609MF
 
 ## 受け入れ条件
 

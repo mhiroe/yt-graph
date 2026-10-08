@@ -19,7 +19,6 @@ export type Channel = {
   handle?: string;
   url?: string;
   description?: string;
-  sampleVideoId?: string;
 };
 
 export type ChannelFeedResult = {

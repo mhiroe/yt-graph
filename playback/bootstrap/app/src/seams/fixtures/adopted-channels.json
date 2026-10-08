@@ -4,22 +4,19 @@
       "id": "FIXP01",
       "title": "Fixture Kids Science",
       "handle": "@fixkidscience",
-      "description": "Fixture stand-in for an adopted channel: simple science demos.",
-      "sampleVideoId": "FIXV01"
+      "description": "Fixture stand-in for an adopted channel: simple science demos."
     },
     {
       "id": "FIXP02",
       "title": "Fixture Anime Club",
       "handle": "@fixanimeclub",
-      "description": "Fixture stand-in for an adopted channel: anime opening breakdowns.",
-      "sampleVideoId": "FIXV02"
+      "description": "Fixture stand-in for an adopted channel: anime opening breakdowns."
     },
     {
       "id": "FIXP03",
       "title": "Fixture Craft Time",
       "handle": "@fixcrafttime",
-      "description": "Fixture stand-in for an adopted channel: paper-craft builds.",
-      "sampleVideoId": "FIXV03"
+      "description": "Fixture stand-in for an adopted channel: paper-craft builds."
     }
   ]
 }
