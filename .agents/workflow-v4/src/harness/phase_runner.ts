@@ -30,6 +30,7 @@
 import { type ComponentId, parseComponentId, parseOperationId } from "../ids.ts";
 import type { Revision } from "../components.ts";
 import { OPERATION_TRANSITIONS, type OperationName } from "../commands.ts";
+import type { SprintRosterEntry } from "../sprints.ts";
 import { formatProtocolVersion, WORKFLOW_PROTOCOL_VERSION } from "../protocol.ts";
 import {
   type MutationScope,
@@ -83,6 +84,11 @@ export type ExecutedCommand = {
   readonly created_ids?: readonly { repository_id: string; component_id: string }[];
   readonly reason?: string;
   readonly exit_code: number;
+  /**
+   * その submit が返した result payload そのまま。record の field が拾わない
+   * 値を運ぶ口 — `sprint.issue` の dry_run preview / 採番された sprint が入る。
+   */
+  readonly result?: unknown;
 };
 
 /**
@@ -90,8 +96,8 @@ export type ExecutedCommand = {
  * data** — the runner never throws, so callers can branch on `completed` /
  * `halted_at` / `error` instead of catching.
  */
-/** `runSkillPhase` の phase 名と、phase でない entry (`wish.complete` / `wish.transition`) の識別子。 */
-export type RunnerPhase = SkillPhase | "wish_complete" | "wish_transition";
+/** `runSkillPhase` の phase 名と、phase でない entry (`wish.complete` / `wish.transition` / `sprint.issue`) の識別子。 */
+export type RunnerPhase = SkillPhase | "wish_complete" | "wish_transition" | "sprint_issue";
 
 export type PhaseRunResult = {
   readonly phase: RunnerPhase;
@@ -600,4 +606,82 @@ export function runWishTransition(
     }
   }
   return finish(phase, commands, false, undefined, undefined, undefined);
+}
+
+export type SprintIssueInput = {
+  readonly iteration_id: string;
+  readonly goal: string;
+  /**
+   * sprint を出す人の受理 verbatim (docs/candidate/workflow-v4/sprints.md)。
+   * 空は「指示無し」であって「理由無し」ではない — gate は wish.complete の
+   * `reason` と同じ形。
+   */
+  readonly accepted: string;
+  readonly baseline_ref?: string;
+  /**
+   * 発行時に見た head の sprint_id。**省略は「head 無しを期待」** —
+   * 既に head が立っていれば conflict (並行 issue の片方だけが通る)。
+   */
+  readonly expected_head?: string;
+  readonly roster: readonly SprintRosterEntry[];
+  /** true なら採番 preview だけを返して DB / file / ledger に何も書かない。 */
+  readonly dry_run?: boolean;
+};
+
+/**
+ * `sprint.issue` の sanctioned agent seam — agent が sprint を発行する唯一の口。
+ * **Not a SkillPhase** — 人の受理 verbatim (`accepted`) が無ければ submit しない
+ * (wish.complete の `reason` gate と同じ形)。raw `workflow.submit` は agent の
+ * sanctioned seam ではないので、この entry が typed command を 1 件組み立てて
+ * submit する。
+ *
+ * submit した command の result は `commands[0].result` にそのまま残る —
+ * `sprint` (採番された SprintInfo) と `dry_run` preview (`projection` block) を
+ * caller が拾う経路。
+ */
+export function runSprintIssue(
+  submit: CliSubmit,
+  input: SprintIssueInput,
+  ctx: RunContext,
+): PhaseRunResult {
+  const phase = "sprint_issue" as const;
+  if (typeof input.accepted !== "string" || input.accepted.length === 0) {
+    return finish(phase, [], false, undefined, undefined, {
+      code: "missing_field",
+      message: "sprint.issue には空でない accepted が必要である (人の受理無しに Sprint を出さない)",
+    });
+  }
+  const operationId = `${ctx.operation_prefix}-1`;
+  const parsedId = parseOperationId(operationId, "operation_prefix");
+  if (!parsedId.ok) {
+    return finish(phase, [], false, undefined, undefined, {
+      code: parsedId.error.code,
+      message: parsedId.error.message,
+    });
+  }
+  const command: PlannedCommand = {
+    operation: "sprint.issue",
+    payload: {
+      iteration_id: input.iteration_id,
+      goal: input.goal,
+      accepted: input.accepted,
+      ...(input.baseline_ref === undefined ? {} : { baseline_ref: input.baseline_ref }),
+      ...(input.expected_head === undefined ? {} : { expected_head: input.expected_head }),
+      roster: input.roster.map((entry) => ({
+        component_id: entry.component_id,
+        expected_revision: entry.expected_revision,
+      })),
+      ...(input.dry_run === true ? { dry_run: true } : {}),
+    },
+    why: "人の受理で Sprint を発行する",
+  };
+  const cli = submit(submitRequest(command, ctx, ctx.actor_ref ?? "user", operationId));
+  const view = responseViewOf(cli.result);
+  const record = {
+    ...executedRecord(operationId, command, cli.exit_code, view),
+    result: cli.result,
+  };
+  const applied = cli.ok && view !== undefined && view.disposition === "applied";
+  const transportError = !cli.ok || view === undefined ? submitFailure(cli) : undefined;
+  return finish(phase, [record], false, undefined, applied ? undefined : 0, transportError);
 }

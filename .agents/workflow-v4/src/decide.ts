@@ -14,7 +14,7 @@ import {
 import { checkStepOperationIds } from "./cross_repo.ts";
 import { parseTaskLocator } from "./document.ts";
 import type { ComponentKind, ComponentState, ComponentStatus, Revision } from "./components.ts";
-import { initialStatus } from "./transitions.ts";
+import { initialStatus, TASK_TERMINAL_STATUSES, WISH_TERMINAL_STATUSES } from "./transitions.ts";
 import { type Command, evaluateCommandTransition, OPERATION_SPECS } from "./commands.ts";
 import {
   type IterationInfo,
@@ -23,6 +23,14 @@ import {
   validateComponentPath,
   validateIterationLabel,
 } from "./iterations.ts";
+import {
+  normalizeSprintLine,
+  type SprintInfo,
+  sprintLabel,
+  type SprintLookup,
+  type SprintMember,
+  type SprintRosterEntry,
+} from "./sprints.ts";
 import type { CommandResponse } from "./responses.ts";
 import { type RelationKey, relationLocality, type RelationType } from "./relations.ts";
 import type { RepositoryContext } from "./repository.ts";
@@ -122,6 +130,11 @@ export type CommandDecision = {
    * 書き込みの実体は persistence 側 (`sql/iterations.ts`) が持つ。
    */
   readonly iteration_effect?: IterationEffect;
+  /**
+   * `sprint.*` command が確定させる state (schema 8)。
+   * iteration と同じく aggregate ではなく、component の state_revision を進めない。
+   */
+  readonly sprint_effect?: SprintEffect;
   /** activity を append するか。Slice A では内容を保持せず、append の有無だけを返す。 */
   readonly appends_activity: boolean;
 };
@@ -160,6 +173,17 @@ export type IterationEffect =
   }
   | { readonly kind: "dispose"; readonly iteration: IterationInfo };
 
+/**
+ * `sprint.*` command が確定させる DB 側の変更 (schema 8)。
+ * sprint は immutable — 差分は次の issue が担うので effect は issue だけ。
+ * fs side effect (registry / `sprint:` key の stamp) はここに含めない。
+ */
+export type SprintEffect = {
+  readonly kind: "issue";
+  readonly sprint: SprintInfo;
+  readonly members: readonly SprintMember[];
+};
+
 const PLANNED_TASK: RelationType = "planned_task";
 
 /**
@@ -192,6 +216,17 @@ export type IterationAwareDecideInput = ReplicationAwareDecideInput & {
    * locator を必ず渡す — DecideInput の optional をここで必須に絞る。
    */
   readonly documentLocatorLookup: DocumentLocatorLookup;
+};
+
+/**
+ * sprint を読める入力 (schema 8)。storage を持つ呼び出しはこの入口を使う。
+ *
+ * `allocated_sprint_id` は `sp-<Crockford 10>` 形の採番済み ID。replay の同一性は
+ * ledger が持つので deterministic である必要は無い (`allocated_component_id` と同じ)。
+ */
+export type SprintAwareDecideInput = IterationAwareDecideInput & {
+  readonly sprintLookup: SprintLookup;
+  readonly allocated_sprint_id?: string;
 };
 
 /**
@@ -253,6 +288,18 @@ export function decideCommandWithReplication(
       response: response(command, "rejected", {
         reason: `${command.operation} は iterationLookup を持つ入口` +
           " (decideCommandWithIterations) を必要とする",
+      }),
+      appends_activity: false,
+    });
+  }
+
+  // sprint も component aggregate に乗らない。ここから来た `sprint.*` は sprint
+  // state を読めないので、iteration op と同じく入口を名指しして reject する。
+  if (isSprintOperation(command.operation)) {
+    return ok({
+      response: response(command, "rejected", {
+        reason: `${command.operation} は sprintLookup を持つ入口` +
+          " (decideCommandWithSprints) を必要とする",
       }),
       appends_activity: false,
     });
@@ -1365,6 +1412,179 @@ function carriedMembers(
   };
 }
 
+// ---------------------------------------------------------------------------
+// sprint (schema 8)
+// ---------------------------------------------------------------------------
+
+export function isSprintOperation(operation: string): boolean {
+  return operation.startsWith("sprint.");
+}
+
+/**
+ * sprint を読める入口。storage を持つ呼び出しは必ずこちらを使う。
+ *
+ * `sprint.*` は component aggregate に乗らないので `decideIteration` と同じく
+ * 別の枝で決める。component 側の command は `decideCommandWithIterations` へ流す。
+ */
+export function decideCommandWithSprints(
+  input: SprintAwareDecideInput,
+): Result<CommandDecision> {
+  if (isSprintOperation(input.command.operation)) {
+    return decideSprintIssue(input);
+  }
+  return decideCommandWithIterations(input);
+}
+
+/** kind を問わず使う terminal status の集合。sprint roster の非終端検査用。 */
+const SPRINT_TERMINAL_STATUSES = new Set<string>([
+  ...WISH_TERMINAL_STATUSES,
+  ...TASK_TERMINAL_STATUSES,
+]);
+
+/**
+ * `sprint.issue` の disposition。
+ *
+ * 検査は全部 decide に集める — roster の実在 / kind / 終端 / membership / revision、
+ * expected_head の同時実行検査、goal の 1 行正規化。通った時だけ issue する。
+ * rejected / conflict / not_found でも ledger には残る (iteration op と同じ規則)。
+ */
+function decideSprintIssue(input: SprintAwareDecideInput): Result<CommandDecision> {
+  const { command, iterationLookup: iterations, sprintLookup: sprints, lookup } = input;
+  const reject = (reason: string): Result<CommandDecision> =>
+    ok({
+      response: response(command, "rejected", { reason }),
+      appends_activity: false,
+    });
+  const conflict = (reason: string): Result<CommandDecision> =>
+    ok({
+      response: response(command, "conflict", { reason }),
+      appends_activity: false,
+    });
+  if (command.operation !== "sprint.issue") {
+    return err(
+      "unknown_operation",
+      `未知の sprint operation: ${command.operation}`,
+      "operation",
+    );
+  }
+  const iterationId = command.payload["iteration_id"];
+  if (typeof iterationId !== "string") {
+    return reject("iteration_id は string である必要がある");
+  }
+  const iteration = iterations.byId(iterationId);
+  if (iteration === undefined) {
+    return ok({
+      response: response(command, "not_found", {
+        reason: `iteration ${iterationId} が見つからない`,
+      }),
+      appends_activity: false,
+    });
+  }
+  if (iteration.disposed_at !== undefined) {
+    return reject(`iteration ${iterationId} は disposed 済み`);
+  }
+
+  // 同時実行検査 1: expected_head。省略は「head 無しを期待」。
+  // head が動いていたら conflict — 暗黙に前の sprint の上へ乗せない。
+  const expectedHead = command.payload["expected_head"];
+  const head = sprints.head(iteration.iteration_id);
+  if (expectedHead === undefined) {
+    if (head !== undefined) {
+      return conflict(
+        `iteration ${iteration.name} の head は ${head.sprint_id} だが expected_head が無い` +
+          " — head 更新を意図するなら expected_head を渡す",
+      );
+    }
+  } else if (typeof expectedHead !== "string") {
+    return reject("expected_head は string である必要がある");
+  } else if (head === undefined || head.sprint_id !== expectedHead) {
+    return conflict(
+      `expected_head ${expectedHead} が現在の head ${head?.sprint_id ?? "なし"} と一致しない`,
+    );
+  }
+
+  // 同時実行検査 2: roster。member はその iteration の member (birth or carry) の
+  // 非終端 wish / mind で、見た revision が現在と一致していること。
+  const rosterRaw = command.payload["roster"];
+  const roster = (Array.isArray(rosterRaw) ? rosterRaw : []) as readonly SprintRosterEntry[];
+  const membership = iterations.members(iteration.iteration_id);
+  for (const entry of roster) {
+    const component = lookup(entry.component_id);
+    if (component === undefined) {
+      return ok({
+        response: response(command, "not_found", {
+          reason: `roster の component ${entry.component_id} が見つからない`,
+        }),
+        appends_activity: false,
+      });
+    }
+    if (component.kind === "task") {
+      return reject(
+        `roster の ${entry.component_id} は task — sprint member は wish / mind に限る` +
+          " (task-level binding は後続の拡張)",
+      );
+    }
+    if (
+      component.status !== undefined && SPRINT_TERMINAL_STATUSES.has(component.status)
+    ) {
+      return reject(
+        `roster の ${entry.component_id} は terminal status (${component.status})`,
+      );
+    }
+    if (!membership.components.includes(entry.component_id)) {
+      return reject(
+        `roster の ${entry.component_id} は iteration ${iteration.name} の member でない`,
+      );
+    }
+    if (component.state_revision !== entry.expected_revision) {
+      return conflict(
+        `roster の ${entry.component_id} は expected_revision ${entry.expected_revision} だが` +
+          ` 現在は r${component.state_revision}`,
+      );
+    }
+  }
+
+  const sprintId = input.allocated_sprint_id;
+  if (sprintId === undefined) {
+    return err(
+      "missing_field",
+      "sprint.issue には採番済みの sprint_id が必要である",
+      "allocated_sprint_id",
+    );
+  }
+  const goal = normalizeSprintLine(command.payload["goal"] as string);
+  const accepted = normalizeSprintLine(command.payload["accepted"] as string);
+  if (goal === "") return reject("goal は空にできない");
+  if (accepted === "") return reject("accepted は空にできない");
+  const baselineRaw = command.payload["baseline_ref"];
+  const baselineRef = typeof baselineRaw === "string" ? normalizeSprintLine(baselineRaw) : "";
+
+  const seq = sprints.nextSeq(iteration.iteration_id);
+  const sprint: SprintInfo = {
+    sprint_id: sprintId,
+    iteration_id: iteration.iteration_id,
+    scope: iteration.scope,
+    component_path: iteration.component_path,
+    label: sprintLabel(iteration, seq),
+    seq,
+    issued_seq: sprints.nextIssuedSeq(),
+    ...(head === undefined ? {} : { previous_sprint_id: head.sprint_id }),
+    goal,
+    accepted,
+    ...(baselineRef === "" ? {} : { baseline_ref: baselineRef }),
+    issued_at: input.now,
+  };
+  const members: SprintMember[] = roster.map((entry) => ({
+    component_id: entry.component_id,
+    state_revision: entry.expected_revision,
+  }));
+  return ok({
+    response: response(command, "applied", { sprint }),
+    sprint_effect: { kind: "issue", sprint, members },
+    appends_activity: false,
+  });
+}
+
 function response(
   command: Command,
   disposition: CommandResponse["disposition"],
@@ -1374,6 +1594,7 @@ function response(
     created_ids?: readonly ComponentAddress[];
     removed_relations?: readonly RelationKey[];
     iteration?: IterationInfo;
+    sprint?: SprintInfo;
     reason?: string;
   },
 ): CommandResponse {
@@ -1388,6 +1609,7 @@ function response(
       ? {}
       : { removed_relations: detail.removed_relations }),
     ...(detail.iteration === undefined ? {} : { iteration: detail.iteration }),
+    ...(detail.sprint === undefined ? {} : { sprint: detail.sprint }),
     ...(detail.reason === undefined ? {} : { reason: detail.reason }),
   };
 }

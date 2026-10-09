@@ -7,10 +7,11 @@
 // async on pipes and can truncate under `process.exit()`.
 //
 // **Entry-local request kinds.** `skill.phase` / `wish.complete` /
-// `wish.transition` are NOT added to `dispatch.ts`: they are harness-level
-// requests that fan out into multiple `workflow.submit` calls through the
-// real CLI subprocess, not single store commands. Nothing in v3 calls this
-// entry yet.
+// `wish.transition` / `sprint.issue` are NOT added to `dispatch.ts`: they are
+// harness-level requests that fan out into `workflow.submit` calls through the
+// real CLI subprocess — `sprint.issue` issues exactly one typed command but
+// carries the user-verbatim `accepted` gate, so it lives here and not as a raw
+// submit seam.
 //
 // 使い方:
 //
@@ -30,6 +31,7 @@ import {
   parseRevision,
   type Revision,
 } from "../components.ts";
+import { parseSprintRoster } from "../commands.ts";
 import { err, ok, type Result, type WorkflowErrorCode } from "../result.ts";
 import {
   CLI_EXIT_BAD_REQUEST,
@@ -46,8 +48,10 @@ import {
   type PhaseRunResult,
   type RunContext,
   runSkillPhase,
+  runSprintIssue,
   runWishCompletion,
   runWishTransition,
+  type SprintIssueInput,
   WISH_TRANSITION_OPERATIONS,
   type WishCompletionInput,
   type WishTransitionInput,
@@ -55,7 +59,12 @@ import {
 
 const CLI_ENTRY = new URL("../cli/main.ts", import.meta.url).href;
 
-const ENTRY_REQUEST_KINDS = ["skill.phase", "wish.complete", "wish.transition"] as const;
+const ENTRY_REQUEST_KINDS = [
+  "skill.phase",
+  "wish.complete",
+  "wish.transition",
+  "sprint.issue",
+] as const;
 
 type Options = {
   readonly repository_id: string;
@@ -72,6 +81,7 @@ const USAGE = [
   "request kinds: skill.phase (phase + flattened phase input + operation_prefix)",
   "               wish.complete (wish + reason + operation_prefix)",
   "               wish.transition (wish + operation + reason + operation_prefix)",
+  "               sprint.issue (iteration_id + goal + accepted + roster + operation_prefix)",
   "request を省くと stdin から JSON を 1 件読む。stdout は JSON 1 行、診断は stderr。",
   "exit code: 0=phase 完走 / wish.complete applied 1=CLI 到達不能 2=request 不正 3=非 applied で halt",
 ].join("\n");
@@ -448,6 +458,71 @@ function wishTransitionInputOf(raw: Record<string, unknown>): Result<WishTransit
   return ok({ wish: wish.value, operation, reason });
 }
 
+/** `sprint.issue` の required string field。空文字は gate をすり抜けるので拒否。 */
+function requiredSprintString(
+  raw: Record<string, unknown>,
+  name: string,
+): Result<string> {
+  const value = raw[name];
+  if (value === undefined) {
+    return err("missing_field", `sprint.issue には ${name} が必要である`, name);
+  }
+  if (typeof value !== "string" || value.length === 0) {
+    return err("invalid_field_type", `${name} は空でない string である必要がある`, name);
+  }
+  return ok(value);
+}
+
+function sprintIssueInputOf(raw: Record<string, unknown>): Result<SprintIssueInput> {
+  const iterationId = requiredSprintString(raw, "iteration_id");
+  if (!iterationId.ok) return iterationId;
+  const goal = requiredSprintString(raw, "goal");
+  if (!goal.ok) return goal;
+  const acceptedRaw = raw["accepted"];
+  if (acceptedRaw === undefined) {
+    return err(
+      "missing_field",
+      "sprint.issue には accepted が必要である (人の受理無しに Sprint を出さない)",
+      "accepted",
+    );
+  }
+  if (typeof acceptedRaw !== "string" || acceptedRaw.length === 0) {
+    return err(
+      "invalid_field_type",
+      "accepted は空でない string である必要がある (人の受理無しに Sprint を出さない)",
+      "accepted",
+    );
+  }
+  const baselineRef = optionalString(raw, "baseline_ref");
+  if (!baselineRef.ok) return baselineRef;
+  // `expected_head` は省略 = 「head 無しを期待」。`null` も同じ意味で受ける —
+  // ledger 側の field kind は optional string なので payload へは書かない。
+  const expectedHeadRaw = raw["expected_head"];
+  const expectedHead = expectedHeadRaw === undefined || expectedHeadRaw === null
+    ? ok(undefined)
+    : optionalString(raw, "expected_head");
+  if (!expectedHead.ok) return expectedHead;
+  const rosterRaw = raw["roster"];
+  if (rosterRaw === undefined) {
+    return err("missing_field", "sprint.issue には roster が必要である", "roster");
+  }
+  const roster = parseSprintRoster(rosterRaw, "roster");
+  if (!roster.ok) return roster;
+  const dryRun = raw["dry_run"];
+  if (dryRun !== undefined && typeof dryRun !== "boolean") {
+    return err("invalid_field_type", "dry_run は boolean である必要がある", "dry_run");
+  }
+  return ok({
+    iteration_id: iterationId.value,
+    goal: goal.value,
+    accepted: acceptedRaw,
+    ...(baselineRef.value === undefined ? {} : { baseline_ref: baselineRef.value }),
+    ...(expectedHead.value === undefined ? {} : { expected_head: expectedHead.value }),
+    roster: roster.value,
+    ...(dryRun === true ? { dry_run: true } : {}),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Run -> CliResponse
 // ---------------------------------------------------------------------------
@@ -548,6 +623,19 @@ function dispatchEntry(options: Options, request: unknown): CliResponse {
         );
       }
       return respond(kind, runWishTransition(submit, input.value, ctx.value));
+    }
+    case "sprint.issue": {
+      const input = sprintIssueInputOf(raw);
+      if (!input.ok) {
+        return failure(
+          kind,
+          input.error.code,
+          input.error.message,
+          CLI_EXIT_BAD_REQUEST,
+          input.error.path,
+        );
+      }
+      return respond(kind, runSprintIssue(submit, input.value, ctx.value));
     }
   }
 }

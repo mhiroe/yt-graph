@@ -16,6 +16,7 @@ Run the deterministic adapter from the current workflow-v4 repository:
 ```sh
 .agents/skills/wish-query/scripts/wish_query.ts preflight --title '<proposed outcome>'
 .agents/skills/wish-query/scripts/wish_query.ts list --id '<w-... or t-...>'
+.agents/skills/wish-query/scripts/wish_query.ts body-scan --term '<term>' [--term ...]
 ```
 
 The adapter locates the repository root, delegates to
@@ -35,11 +36,35 @@ workflow state.
 lookup. The Core owns bounds and validation; the adapter only parses a narrow
 command surface and enforces a hard response-size ceiling.
 
+Both `preflight` candidates and `list` rows may carry an optional `sprint`
+field: the `sprint_id` of the latest sprint rostering that component inside
+its effective iteration — the same binding rule as the `> sprint:` callout
+key written by `sprint.issue`. The field is absent (never `null`) when the
+component is not sprint-bound. A bound candidate means an accepted sprint
+already claims the work; `sprint.current` / `sprint.members` via
+`wf4.sh cli` resolve the sprint's goal and roster.
+
+`body-scan` is the adapter-local body-text leg: a bounded case-insensitive
+substring scan over `docs/wish_*.md` for terms title tokens cannot reach
+(prose design inside wish bodies). It never touches Core — no DB read, no
+Core call — so it also runs where the repo is not yet provisioned.
+
+- at least one `--term` (repeatable; normalized NFKC + lowercase, OR match)
+- optional `--dir` (default `docs`), `--glob` (default `wish_*.md`),
+  `--max-files` (200), `--max-matches` (40), `--file-bytes` (256 KiB)
+- result (`wf4.body-scan.v1`): `scanned_files`, `matched_files` (capped),
+  `matched_total`, `matched_digest` (fnv1a8 over the full matched path set —
+  the membership fingerprint `planner`/`doit` record and re-check),
+  `per_term` counts, `truncated` + `truncation` reasons
+  (`dir_missing`, `file_cap`, `file_bytes`, `match_cap`)
+- exceeding any cap — or a missing scan dir — sets `truncated:true` /
+  `complete:false` and exits 3 — fail closed, never silently partial
+
 ## Interpreting evidence
 
-- A preflight result is evidence for agent or user judgment, never authority
-  to merge, link, move, or mint work.
-- Continue only when the Core reports `complete: true`. Treat
+- A preflight or body-scan result is evidence for agent or user judgment,
+  never authority to merge, link, move, or mint work.
+- Continue only when the result reports `complete: true`. Treat
   `stale_revision`, `incomplete`, or either truncation flag as a stop requiring
   a narrower/fresher read.
 - `candidate_found` means inspect the candidate's owning wish file and Story

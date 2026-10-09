@@ -15,6 +15,38 @@ Execute exactly one workflow v4 task against the vendored Core runtime at
 - The repository is provisioned: `.workflow/repository.json` exists. If it does
   not, run `.agents/workflow-v4/wf4.sh provision <repository-id>` once.
 
+## Related-work evidence — check at start
+
+Before sending the phase request, verify the owning Story (the task's
+`^w-` heading) carries the planner's `> related-work evidence:` prelude
+line (canonical form in `planner` "Related-work gate"), then confirm the
+evidence still covers the corpus. All checks are read-only; on any halt
+do not send the phase request — report the finding verbatim to the
+dispatcher (remediation is a planner refresh entry, never an executor
+waiver).
+
+- **missing** → HALT: the related-work gate never ran for this Story.
+- **wrong Story / malformed** → HALT: the line's `story` id differs from
+  the wish's component id, its `@<rev>` exceeds the wish's current
+  `wf4.sh revision <w-id>` (the recorded rev is the evidence-write basis;
+  later transitions legitimately advance it), fields are missing, the
+  schema tag is not `v1`, or a `truncated` flag is recorded.
+- **related-set line missing / malformed** → HALT: the Story must also
+  carry one `> related set: v1` line beside the evidence line (the
+  planner's classified related set, t-01M4F8WHHK): all five class keys
+  present (`owner`/`sibling`/`duplicate`/`blocks`/`blocked-by`), values
+  `none` or comma-separated `w-` ids, schema tag `v1`. Freshness rides
+  the evidence line's `at` — both lines are written in the same pass,
+  so the set line carries no timestamp of its own.
+- **stale** → HALT, judged by two bounded delta re-reads against the
+  line's own `at` timestamp:
+  1. `wish_query.ts preflight --title '<evidence outcome>' --subject
+     <w-id> --state-changed-since <at>` — `complete:false` → halt; any
+     candidate other than the recorded `owner` → stale → halt.
+  2. `wish_query.ts body-scan --term <each recorded terms value>` —
+     `complete:false` → halt; `matched_digest` differs from the recorded
+     `set` → stale → halt (the related file set moved).
+
 ## Request
 
 Existing planned task:

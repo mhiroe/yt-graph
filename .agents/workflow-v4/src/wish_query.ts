@@ -30,6 +30,11 @@ export type WishQueryCandidate = {
   readonly title_truncated: boolean;
   readonly locator?: string;
   readonly locator_truncated: boolean;
+  /**
+   * この component を roster に持つ最新 sprint の `sprint_id` (その effective
+   * iteration の中で — `> sprint:` binding と同じ規則)。無ければ省略。
+   */
+  readonly sprint?: string;
   readonly updated_at: string;
   readonly score: number;
   readonly reason_codes: readonly WishQueryReasonCode[];
@@ -71,6 +76,11 @@ export type WishQueryInput = {
   readonly expected_revision?: Revision;
   readonly components: readonly ListedComponent[];
   readonly outgoing_relations: readonly RelationKey[];
+  /**
+   * component_id -> effective sprint_id の写像 (dispatch が DB から組み立てる)。
+   * 無ければ candidate は `sprint` field を持たない。
+   */
+  readonly sprint_bindings?: ReadonlyMap<ComponentId, string>;
   readonly scan_limit: number;
   readonly candidate_limit: number;
   readonly scan_truncated: boolean;
@@ -207,6 +217,7 @@ export function buildWishQueryResult(input: WishQueryInput): WishQueryResult {
     if (reasons.size === 0) continue;
     const title = bounded(candidateTitle, WISH_QUERY_TITLE_MAX);
     const locator = bounded(component.document_locator, 512);
+    const sprint = input.sprint_bindings?.get(component.component_id);
     matches.push({
       component_id: component.component_id,
       kind: component.kind,
@@ -216,6 +227,7 @@ export function buildWishQueryResult(input: WishQueryInput): WishQueryResult {
       title_truncated: component.title_truncated || title.truncated,
       ...(locator.value === undefined ? {} : { locator: locator.value }),
       locator_truncated: component.locator_truncated || locator.truncated,
+      ...(sprint === undefined ? {} : { sprint }),
       updated_at: component.updated_at,
       score: Math.round(score * 10_000) / 10_000,
       reason_codes: orderedReasons(reasons),

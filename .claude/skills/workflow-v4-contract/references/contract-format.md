@@ -45,6 +45,14 @@ Wishes and tasks are Markdown nodes under `docs/`; the vendored Core under
 - **State lives in the DB.** v4 drops the per-node property callout (`> [!meta]-`) — status,
   links, and history are Core-side. The Markdown node holds existence, position, text, and the
   anchor only.
+- **One generated binding key is the exception.** An accepted `sprint.issue`
+  writes `> sprint: <sprint_id>` inside the node's `[!meta]` callout (creating
+  the callout when absent). It marks the latest sprint whose roster contains
+  the node inside its effective iteration, is produced only by the Core
+  projection, and is rewritten from the DB by `sprint.repair` when it drifts —
+  never hand-write it. Read-side the same binding appears as the `sprint`
+  field on `wish_query.preflight` / `component.list` / `document.list_nodes`
+  rows.
 
 ## spec format
 
@@ -103,6 +111,7 @@ The v4 provision contract (project -> component); iterations are live as of sche
 <repo>/
   docs/                            project scope
     rule_<repo>.md                 spans iterations
+    sprints.md                     generated Sprint registry (v2)
     iterations/<it>/               project iteration
       wish_<repo>.md               project-owned wish
     active/<it> -> iterations/<it>   one link per ACTIVE iteration
@@ -143,6 +152,12 @@ The v4 provision contract (project -> component); iterations are live as of sche
 - Component docs live under the component path, not under the project iteration.
 - Iterations are directories **and** DB rows; a wish's iteration is fixed at birth and the file
   does not move. Only the DB links a project iteration to component iterations — no manifest.
+- **`docs/sprints.md` is the generated Sprint registry** (v2): `## current`
+  holds the head pointer per iteration; `## sp-*` sections are immutable
+  issued entries (goal, iteration, roster). A Sprint belongs to exactly one
+  Iteration and groups its members' accepted work; the Core DB is canonical
+  and the file is the committed cross-repository projection — never
+  hand-edit or delete entries.
 - A node doc's frontmatter carries three **generated** keys — `iteration: <seq>`
   (numeric, for compare/sort), `iteration_label: <label>` (the label string, e.g.
   `v8`), and `iteration_created: <iso>` (the iteration's creation timestamp, ISO 8601

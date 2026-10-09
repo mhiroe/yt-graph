@@ -8,8 +8,10 @@
 import { err, ok, type Result } from "../result.ts";
 import type { ComponentId } from "../ids.ts";
 import {
+  INIT_ITERATION_LABEL,
   iterationContainingPath,
   type IterationInfo,
+  type IterationInitPlan,
   type IterationLookup,
   type IterationRebuildPlan,
   type IterationScope,
@@ -615,8 +617,10 @@ export function applyIterationRebuild(
           applied.members += 1;
         }
         // canonical path がこの iteration dir の中なら birth_iteration を復元する。
-        // 既に別の値が入っている場合は既存を正として warning に留める。
-        if (path.startsWith(`${iteration.dir}/`)) {
+        // `init` は dir を持たないので member になった component 全件が birth の
+        // 記録 (stamp が scope の init を名乗る)。既に別の値が入っている場合は
+        // 既存を正として warning に留める。
+        if (iteration.is_init === true || path.startsWith(`${iteration.dir}/`)) {
           const birth = birthCheck.get(componentId);
           const birthValue = birth === undefined ? undefined : rowString(birth, "birth_iteration");
           // NULL と SQL NULL の区別: row が無い (component 未登録) のは upstream で
@@ -735,4 +739,100 @@ export function stampBirthIteration(
         " VALUES (?, ?, ?)",
     )
     .run(target.iteration_id, componentId, now);
+}
+
+export type IterationInitApplyResult = {
+  readonly iterations: number;
+  readonly births: number;
+  readonly members: number;
+  readonly doc_members: number;
+  readonly actives: number;
+};
+
+/**
+ * `iteration.init` の plan を 1 transaction で書き込む (migration — command を
+ * 経由しないので ledger には載らない)。冪等: 既存 init row / birth / member /
+ * active は増やさず、既に設定された値を上書きしない。
+ */
+export function applyIterationInit(
+  driver: SqlDriver,
+  plan: IterationInitPlan,
+  now: string,
+): IterationInitApplyResult {
+  const applied = { iterations: 0, births: 0, members: 0, doc_members: 0, actives: 0 };
+  driver.exec("BEGIN IMMEDIATE");
+  try {
+    const insertIteration = driver.prepare(
+      "INSERT INTO iterations (iteration_id, scope, component_path, name, seq," +
+        " predecessor_iteration_id, created_at, last_modified) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)",
+    );
+    const birthCheck = driver.prepare(
+      "SELECT birth_iteration FROM components WHERE component_id = ?",
+    );
+    const birthUpdate = driver.prepare(
+      "UPDATE components SET birth_iteration = ? WHERE component_id = ? AND birth_iteration IS NULL",
+    );
+    const memberCheck = driver.prepare(
+      "SELECT 1 AS x FROM iteration_members WHERE iteration_id = ? AND component_id = ?",
+    );
+    const memberInsert = driver.prepare(
+      "INSERT OR IGNORE INTO iteration_members (iteration_id, component_id, carried_at) VALUES (?, ?, ?)",
+    );
+    const docCheck = driver.prepare(
+      "SELECT 1 AS x FROM iteration_doc_members WHERE iteration_id = ? AND document_path = ?",
+    );
+    const docInsert = driver.prepare(
+      "INSERT OR IGNORE INTO iteration_doc_members (iteration_id, document_path, carried_at) VALUES (?, ?, ?)",
+    );
+    const activeCheck = driver.prepare(
+      "SELECT 1 AS x FROM active_iterations WHERE scope = ? AND component_path = ? AND iteration_id = ?",
+    );
+    const activeInsert = driver.prepare(
+      "INSERT INTO active_iterations (scope, component_path, iteration_id, is_default, activated_at) VALUES (?, ?, ?, 1, ?)",
+    );
+
+    for (const scope of plan.scopes) {
+      if (scope.create) {
+        insertIteration.run(
+          scope.iteration_id,
+          scope.scope,
+          scope.component_path,
+          INIT_ITERATION_LABEL,
+          0,
+          scope.created_at,
+          scope.created_at,
+        );
+        applied.iterations += 1;
+      }
+      for (const assignment of scope.assignments) {
+        const birth = birthCheck.get(assignment.component_id);
+        if (birth !== undefined && rowString(birth, "birth_iteration") === undefined) {
+          birthUpdate.run(assignment.iteration_id, assignment.component_id);
+          applied.births += 1;
+        }
+        if (memberCheck.get(assignment.iteration_id, assignment.component_id) === undefined) {
+          memberInsert.run(assignment.iteration_id, assignment.component_id, now);
+          applied.members += 1;
+        }
+      }
+      for (const path of scope.doc_members) {
+        if (docCheck.get(scope.iteration_id, path) === undefined) {
+          docInsert.run(scope.iteration_id, path, now);
+          applied.doc_members += 1;
+        }
+      }
+      if (
+        scope.activate &&
+        activeCheck.get(scope.scope, scope.component_path, scope.iteration_id) === undefined
+      ) {
+        activeInsert.run(scope.scope, scope.component_path, scope.iteration_id, scope.created_at);
+        applied.actives += 1;
+      }
+    }
+    driver.exec("COMMIT");
+  } catch (cause) {
+    driver.exec("ROLLBACK");
+    throw cause;
+  }
+  return applied;
 }

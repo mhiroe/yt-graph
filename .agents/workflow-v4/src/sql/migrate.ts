@@ -21,12 +21,15 @@ import {
   COMPONENTS_OVERVIEW_INDEX_DDL,
   componentsTableDdl,
   CURRENT_ITERATIONS_TABLE_DDL,
+  CURRENT_SPRINTS_TABLE_DDL,
   ITERATION_COMPONENTS_TABLE_DDL,
   ITERATION_DOC_MEMBERS_TABLE_DDL,
   ITERATION_MEMBERS_TABLE_DDL,
   ITERATIONS_TABLE_DDL_V6,
   iterationsTableDdl,
   SCHEMA_MIGRATIONS_TABLE_DDL,
+  SPRINT_MEMBERS_TABLE_DDL,
+  SPRINTS_TABLE_DDL,
   WORKFLOW_SCHEMA_VERSION,
 } from "./schema.ts";
 
@@ -121,6 +124,19 @@ export const SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
          predecessor_iteration_id, created_at, created_at, disposed_at FROM iterations`,
       "DROP TABLE iterations",
       "ALTER TABLE iterations_v7 RENAME TO iterations",
+    ],
+  },
+  {
+    // sprint (docs/candidate/workflow-v4/sprints.md)。追加だけで既存 row への
+    // backfill は無いので rebuild しない。registry 側の adoption は `sprint.repair` が
+    // 別経路で行う — migration は空 table を作るだけ。
+    from_version: 7,
+    to_version: 8,
+    name: "sprint tables",
+    statements: [
+      SPRINTS_TABLE_DDL,
+      SPRINT_MEMBERS_TABLE_DDL,
+      CURRENT_SPRINTS_TABLE_DDL,
     ],
   },
 ];

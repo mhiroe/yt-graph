@@ -130,3 +130,26 @@ export function allocateVaultComponentId(
     "component_id",
   );
 }
+
+/**
+ * sprint ID の採番 (schema 8)。`sp-<Crockford base32 10 桁>` — vault component の
+ * prefix 系 (`m-`/`w-`/`t-`) の外。採番方式は `allocateVaultComponentId` と同じく
+ * timestamp + 衝突スキップ。replay の同一性は ledger が持つ。
+ */
+export function allocateSprintId(
+  epochMillis: number,
+  taken: (candidate: string) => boolean,
+  limit = 1000,
+): Result<string> {
+  for (let offset = 0; offset < limit; offset += 1) {
+    const body = encodeVaultTimestamp(epochMillis + offset);
+    if (!body.ok) return body;
+    const candidate = `sp-${body.value}`;
+    if (!taken(candidate)) return ok(candidate);
+  }
+  return err(
+    "invalid_id",
+    `sprint ID を ${limit} ミリ秒分探しても空きが無い`,
+    "sprint_id",
+  );
+}

@@ -302,6 +302,12 @@ export type DocumentNodeView = {
   readonly body_hash: string;
   /** 既に付いている stable ID。未 register の node では未設定。 */
   readonly component_id?: ComponentId;
+  /**
+   * この node の component を roster に持つ最新 sprint の `sprint_id` (その
+   * effective iteration の中で — `> sprint:` binding と同じ規則)。
+   * **port は設定しない — `document.list_nodes` が DB から enrich する。**
+   */
+  readonly sprint?: string;
 };
 
 /** file 1 つ分の node 一覧 (`listSections` の DocumentPort 側の顔)。 */
@@ -347,6 +353,27 @@ export type StampIterationPropertiesInput = {
   /** repo root 相対の `.md` path。`#` fragment は受けない (file 全体への書き込み)。 */
   readonly path: string;
   readonly properties: IterationProperties;
+};
+
+/**
+ * wish の `[!meta]` callout へ `> sprint: <sprint_id>` を upsert する入力 (schema 8)。
+ * stamp 対象は component の node なので `component_id` で指す (registry 側の `path`
+ * 指定とは別の顔)。書く値は sprint の `sprint_id` — label でも空でもない。
+ */
+export type StampSprintBindingInput = {
+  readonly component_id: ComponentId;
+  readonly sprint_id: string;
+};
+
+/**
+ * `docs/sprints.md` registry の書き出し入力 (schema 8)。
+ * `content` は `renderSprintRegistry` の出力 — `## current` head の更新と
+ * append-only の `## <sprint_id>` entry を同時に持つので file 全体の置き換え。
+ */
+export type WriteSprintRegistryInput = {
+  /** 省略時は `docs/sprints.md`。 */
+  readonly path?: string;
+  readonly content: string;
 };
 
 export type RegisterComponentIdInput = {
@@ -562,6 +589,21 @@ export interface DocumentPort {
    */
   stampIterationProperties?(
     input: StampIterationPropertiesInput,
+  ): Result<{ readonly changed: boolean }>;
+  /**
+   * `sprint.issue` 後の generated key `> sprint: <id>` を wish の `[!meta]` callout
+   * へ upsert する (schema 8)。**optional:** `stampIterationProperties` と同じく、
+   * 未実装 port は「書けない」でよい — `sprint:` key は `sprint.repair` で再投影できる。
+   */
+  stampSprintBinding?(
+    input: StampSprintBindingInput,
+  ): Result<{ readonly changed: boolean }>;
+  /**
+   * `docs/sprints.md` registry を render 済み内容で書き出す (schema 8)。
+   * file が無ければ作る。**optional:** 同上。
+   */
+  writeSprintRegistry?(
+    input: WriteSprintRegistryInput,
   ): Result<{ readonly changed: boolean }>;
 }
 

@@ -8,6 +8,9 @@ import { listMindWishLinks, type MindWishLinkView } from "../sql/document_projec
 import { rowString } from "../sql/driver.ts";
 import type { SqliteWorkflowStore } from "../sql/store.ts";
 import { anchorIntent, type ScanResult } from "./scan.ts";
+import { parseComponentId } from "../ids.ts";
+import { parseSprintRegistry, scanSprintBindings, SPRINT_REGISTRY_PATH } from "../sprints.ts";
+import { expectedSprintBinding, sprintEntriesForRegistry, sprintHeadsOf } from "../sql/sprints.ts";
 
 /** どこにも結ばれていない (COMPONENTS に row が無い) vault 形 anchor。 */
 export type AuditUnbound = {
@@ -65,6 +68,26 @@ export type AuditProjectionGap = {
   readonly detail: string;
 };
 
+/**
+ * sprint projection の食い違い (schema 8)。
+ *
+ * - `registry_missing`: DB に sprint が在るのに `docs/sprints.md` が無い。
+ * - `registry_parse`: registry が parse 不能 (v1/v2 どちらの形でも読めない)。
+ * - `registry_entry`: entry が DB row と食い違う (field 不一致 / DB に無い / 欠落)。
+ * - `registry_head`: `## current` head が `current_sprints` と食い違う。
+ * - `binding`: `> sprint:` key が expected (effective iteration の最新 sprint) と違う。
+ */
+export type AuditSprintMismatch = {
+  readonly kind:
+    | "registry_missing"
+    | "registry_parse"
+    | "registry_entry"
+    | "registry_head"
+    | "binding";
+  readonly locator?: string;
+  readonly detail: string;
+};
+
 export type AuditReport = {
   readonly repository_id: string;
   readonly anchors_scanned: number;
@@ -91,6 +114,8 @@ export type AuditReport = {
      */
     readonly skipped_derived: number;
     readonly orphan_components: number;
+    /** sprint projection の食い違い (registry / `sprint:` binding)。 */
+    readonly sprint_mismatches: number;
     /** 失敗の合計。`external_relations` / `identity_only` / `foreign_anchors` / `skipped_derived` は含まない。 */
     readonly failures: number;
   };
@@ -105,6 +130,7 @@ export type AuditReport = {
   /** 走査から外した派生 view file の path (情報)。 */
   readonly skipped_derived_files: readonly string[];
   readonly orphan_components: readonly string[];
+  readonly sprint_mismatches: readonly AuditSprintMismatch[];
 };
 
 /** audit が mind -> wish link を跨 repo で解決するための口。CLI 層が registry 解決済みの link 一覧を渡す。 */
@@ -270,8 +296,151 @@ export function auditCutover(
     .filter((id) => !scan.by_id.has(id))
     .sort();
 
+  // --- sprint projection parity (schema 8) ---
+  // registry (`docs/sprints.md`) と `sprint:` binding は DB state の派生物。
+  // generated であっても drift は報告する — 直すのは sprint.repair、audit は読むだけ。
+  const sprintMismatches: AuditSprintMismatch[] = [];
+  const dbEntries = sprintEntriesForRegistry(driver);
+  const registryRaw = scan.sources.get(SPRINT_REGISTRY_PATH);
+  if (registryRaw === undefined) {
+    if (dbEntries.length > 0) {
+      sprintMismatches.push({
+        kind: "registry_missing",
+        locator: SPRINT_REGISTRY_PATH,
+        detail: `DB に sprint が ${dbEntries.length} 件在るが registry が無い`,
+      });
+    }
+  } else {
+    const parsed = parseSprintRegistry(registryRaw);
+    if (!parsed.ok) {
+      sprintMismatches.push({
+        kind: "registry_parse",
+        locator: SPRINT_REGISTRY_PATH,
+        detail: `registry を parse できない: ${parsed.error.message}`,
+      });
+    } else {
+      const fileById = new Map(parsed.value.entries.map((entry) => [entry.sprint_id, entry]));
+      const dbById = new Map(dbEntries.map((entry) => [entry.sprint_id, entry]));
+      for (const fileEntry of parsed.value.entries) {
+        const want = dbById.get(fileEntry.sprint_id);
+        if (want === undefined) {
+          sprintMismatches.push({
+            kind: "registry_entry",
+            locator: `${SPRINT_REGISTRY_PATH}#${fileEntry.sprint_id}`,
+            detail: `registry の sprint が DB に無い: ${fileEntry.sprint_id}`,
+          });
+          continue;
+        }
+        const diffs: string[] = [];
+        if (fileEntry.iteration_id !== want.iteration_id) {
+          diffs.push(`iteration_id=${fileEntry.iteration_id}!=${want.iteration_id}`);
+        }
+        if (fileEntry.seq !== want.seq) diffs.push(`seq=${fileEntry.seq}!=${want.seq}`);
+        if (fileEntry.issued_seq !== want.issued_seq) {
+          diffs.push(`issued_seq=${fileEntry.issued_seq}!=${want.issued_seq}`);
+        }
+        if ((fileEntry.previous_sprint_id ?? "") !== (want.previous_sprint_id ?? "")) {
+          diffs.push(
+            `previous=${fileEntry.previous_sprint_id ?? ""}!=${want.previous_sprint_id ?? ""}`,
+          );
+        }
+        if (fileEntry.goal !== want.goal) diffs.push("goal");
+        if (fileEntry.accepted !== want.accepted) diffs.push("accepted");
+        if ((fileEntry.baseline_ref ?? "") !== (want.baseline_ref ?? "")) {
+          diffs.push("baseline");
+        }
+        if (fileEntry.issued_at !== want.issued_at) diffs.push("issued_at");
+        const wantRoster = new Map(
+          want.roster.map((member) => [member.component_id, member.state_revision]),
+        );
+        const fileRoster = new Map(
+          fileEntry.roster.map((member) => [member.component_id, member.state_revision]),
+        );
+        if (wantRoster.size !== fileRoster.size) {
+          diffs.push(`roster=${fileRoster.size}!=${wantRoster.size}`);
+        } else {
+          for (const [id, revision] of fileRoster) {
+            if (wantRoster.get(id) !== revision) {
+              diffs.push(`roster ${id}`);
+              break;
+            }
+          }
+        }
+        if (diffs.length > 0) {
+          sprintMismatches.push({
+            kind: "registry_entry",
+            locator: `${SPRINT_REGISTRY_PATH}#${fileEntry.sprint_id}`,
+            detail: `entry が DB と食い違う: ${diffs.join(", ")}`,
+          });
+        }
+      }
+      for (const want of dbEntries) {
+        if (!fileById.has(want.sprint_id)) {
+          sprintMismatches.push({
+            kind: "registry_entry",
+            locator: `${SPRINT_REGISTRY_PATH}#${want.sprint_id}`,
+            detail: `DB の sprint が registry に無い: ${want.sprint_id}`,
+          });
+        }
+      }
+      const fileHeads = new Map(
+        parsed.value.heads.map((head) => [head.iteration_id, head.sprint_id]),
+      );
+      const dbHeads = new Map(
+        sprintHeadsOf(driver).map((head) => [head.iteration_id, head.sprint_id]),
+      );
+      for (const [iterationId, sprintId] of fileHeads) {
+        const want = dbHeads.get(iterationId);
+        if (want === undefined) {
+          sprintMismatches.push({
+            kind: "registry_head",
+            locator: SPRINT_REGISTRY_PATH,
+            detail: `## current の head (${iterationId} -> ${sprintId}) が DB に無い`,
+          });
+        } else if (want !== sprintId) {
+          sprintMismatches.push({
+            kind: "registry_head",
+            locator: SPRINT_REGISTRY_PATH,
+            detail: `head が食い違う: registry=${sprintId} DB=${want} (${iterationId})`,
+          });
+        }
+      }
+      for (const [iterationId, sprintId] of dbHeads) {
+        if (!fileHeads.has(iterationId)) {
+          sprintMismatches.push({
+            kind: "registry_head",
+            locator: SPRINT_REGISTRY_PATH,
+            detail: `DB の head (${iterationId} -> ${sprintId}) が ## current に無い`,
+          });
+        }
+      }
+    }
+  }
+  for (const [path, raw] of scan.sources) {
+    for (const binding of scanSprintBindings(raw)) {
+      const parsed = parseComponentId(binding.component_id, "component_id");
+      if (!parsed.ok) {
+        sprintMismatches.push({
+          kind: "binding",
+          locator: `${path}#${binding.component_id}`,
+          detail: `sprint: binding の component id が vault 形でない: ${binding.component_id}`,
+        });
+        continue;
+      }
+      const expected = expectedSprintBinding(driver, parsed.value, path);
+      if (expected === undefined || expected.sprint_id !== binding.sprint_id) {
+        sprintMismatches.push({
+          kind: "binding",
+          locator: `${path}#${binding.component_id}`,
+          detail: `sprint: ${binding.sprint_id} が expected ` +
+            `(${expected?.sprint_id ?? "なし"}) と一致しない`,
+        });
+      }
+    }
+  }
+
   const failures = unbound.length + invalid.length + duplicateIds.length + broken.length +
-    projectionGaps.length + orphans.length;
+    projectionGaps.length + orphans.length + sprintMismatches.length;
   return {
     repository_id: repositoryId,
     anchors_scanned: scan.anchors.length,
@@ -287,6 +456,7 @@ export function auditCutover(
       identity_only: identityOnly.length,
       skipped_derived: scan.skipped_derived.length,
       orphan_components: orphans.length,
+      sprint_mismatches: sprintMismatches.length,
       failures,
     },
     unbound_ids: unbound,
@@ -299,5 +469,6 @@ export function auditCutover(
     identity_only_components: identityOnly,
     skipped_derived_files: scan.skipped_derived,
     orphan_components: orphans,
+    sprint_mismatches: sprintMismatches,
   };
 }

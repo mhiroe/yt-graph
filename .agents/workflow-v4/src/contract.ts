@@ -50,3 +50,7 @@ export * from "./cross_repo.ts";
 // pure contract 側に置く。`sql/iterations.ts` と `adapters/fs_iteration.ts` は
 // ここから辿れない。
 export * from "./iterations.ts";
+// artifact 0.29.0。sprint の row 形 / registry (docs/sprints.md v2) parse / `sprint:`
+// callout key の codec — committed tree を読む consumer (wishboard) が使うので
+// pure contract 側に置く。`sql/sprints.ts` はここから辿れない。
+export * from "./sprints.ts";

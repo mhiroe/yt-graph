@@ -11,16 +11,21 @@ import {
   type ComponentState,
   type Revision,
 } from "../components.ts";
-import { allocateVaultComponentId, parseVaultComponentIdForKind } from "../vault_ids.ts";
+import {
+  allocateSprintId,
+  allocateVaultComponentId,
+  parseVaultComponentIdForKind,
+} from "../vault_ids.ts";
 import { WORKFLOW_PROTOCOL_VERSION } from "../protocol.ts";
 import type { Command } from "../commands.ts";
-import { type CommandDecision, decideCommandWithIterations } from "../decide.ts";
+import { type CommandDecision, decideCommandWithSprints } from "../decide.ts";
 import { parseComponentId } from "../ids.ts";
 import { requestDigest } from "../idempotency.ts";
 import type { RelationKey } from "../relations.ts";
 import type { CommandResponse } from "../responses.ts";
 import { rowString } from "./driver.ts";
 import { applyIterationEffect, iterationLookupOf, stampBirthIteration } from "./iterations.ts";
+import { applySprintEffect, sprintById, sprintLookupOf } from "./sprints.ts";
 import { locatorResolverOf } from "./document_projection.ts";
 import type { SqliteWorkflowStore } from "./store.ts";
 
@@ -238,11 +243,25 @@ export function runLocalCommand(
       }
       allocated = result.value;
     }
+    // sprint id は component ID の採番経路とは別。`sp-<Crockford 10>` を衝突スキップで
+    // 採る。replay の同一性は operation ledger が持つ (component ID と同じ裁定)。
+    let allocatedSprintId: string | undefined;
+    if (command.operation === "sprint.issue") {
+      const result = allocateSprintId(
+        Date.now(),
+        (candidate) => sprintById(driver, candidate) !== undefined,
+      );
+      if (!result.ok) {
+        driver.exec("ROLLBACK");
+        return result;
+      }
+      allocatedSprintId = result.value;
+    }
 
-    // storage を持つ経路なので relation / event / iteration を認識する入口を必ず使う。
-    // duplicate attach の noop も conflict resolve も iteration の seq 採番も
+    // storage を持つ経路なので relation / event / iteration / sprint を認識する入口を
+    // 必ず使う。duplicate attach の noop も conflict resolve も iteration の seq 採番も
     // この adapter の保証であり、呼び出し側の選択にしない。
-    const decided = decideCommandWithIterations({
+    const decided = decideCommandWithSprints({
       command,
       context: store.context,
       lookup: store.lookup,
@@ -250,8 +269,10 @@ export function runLocalCommand(
       eventLookup: store.eventLookup,
       iterationLookup: iterationLookupOf(driver),
       documentLocatorLookup: locatorResolverOf(store),
+      sprintLookup: sprintLookupOf(driver),
       now,
       ...(allocated === undefined ? {} : { allocated_component_id: allocated }),
+      ...(allocatedSprintId === undefined ? {} : { allocated_sprint_id: allocatedSprintId }),
     });
     if (!decided.ok) {
       driver.exec("ROLLBACK");
@@ -381,6 +402,12 @@ function applyDecision(
   // `iteration_effect` で確定し event を持たない)。
   if (decision.iteration_effect !== undefined) {
     const applied = applyIterationEffect(driver, command, decision.iteration_effect, now);
+    if (!applied.ok) return applied;
+  }
+
+  // 4d. sprint (schema 8)。iteration と同じく domain_events へは流れない。
+  if (decision.sprint_effect !== undefined) {
+    const applied = applySprintEffect(driver, decision.sprint_effect, now);
     if (!applied.ok) return applied;
   }
 

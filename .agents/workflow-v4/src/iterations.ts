@@ -49,8 +49,29 @@ export const ITERATION_LABEL_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 /**
  * iteration dir と同じ階層に在る名前。label として使うと dir が衝突するので予約する。
  * `active` は schema 7 の active link dir (`<component>/active/<label>`)。
+ * `init` は schema 8 の予約 root iteration — migration op (`iteration.init`) だけが
+ * 開き、caller は `iteration.open` で作れない (dir / symlink を持たない)。
  */
-export const RESERVED_ITERATION_LABELS = ["current", "docs", "spec", "app", "active"] as const;
+export const RESERVED_ITERATION_LABELS = [
+  "current",
+  "docs",
+  "spec",
+  "app",
+  "active",
+  "init",
+] as const;
+
+/** schema 8 の予約 root iteration の label (`iteration.init` だけが開く)。 */
+export const INIT_ITERATION_LABEL = "init";
+/** `init` の seq。全 caller-opened iteration より前に並ぶ (re-number しない)。 */
+export const INIT_ITERATION_SEQ = 0;
+
+/** seq 0 + label `init` で root iteration かを見る。dir / link を持たない判定に使う。 */
+export function isInitIteration(
+  iteration: Pick<IterationInfo, "name" | "seq">,
+): boolean {
+  return iteration.name === INIT_ITERATION_LABEL && iteration.seq === INIT_ITERATION_SEQ;
+}
 
 export function validateIterationLabel(value: unknown, path?: string): Result<string> {
   if (typeof value !== "string") {
@@ -556,6 +577,11 @@ export type RebuiltIteration = {
   readonly is_default: boolean;
   /** member になる canonical path (component / doc の区別は DB 側で引く)。 */
   readonly member_paths: readonly string[];
+  /**
+   * `init` 予約 root iteration。dir / link を持たないので apply 側は
+   * skeleton / link を作らず、member component 全件に birth を復元する。
+   */
+  readonly is_init?: boolean;
 };
 
 export type IterationRebuildPlan = {
@@ -635,6 +661,8 @@ type RebuildCandidate = {
   isDefault: boolean;
   claims: { seq: number; created: string; via: string }[];
   memberPaths: Set<string>;
+  /** `init` virtual candidate — dir / link を持たず stamp だけで復元する (schema 8)。 */
+  isInit?: boolean;
 };
 
 function scopeKeyOf(scope: IterationScope, componentPath: string): string {
@@ -885,6 +913,32 @@ export function planIterationRebuild(input: {
     claim: RebuildCandidate;
     evidence: Set<RebuildCandidate>;
   }[] = [];
+  // `init` (schema 8) は dir を持たない予約 root iteration。claim は scope 単位の
+  // virtual candidate へ集める — dir scan / link には現れない。
+  const componentScopeDirs = new Set<string>(candidateParents);
+  for (const dir of discoverComponentScopeDirs([...input.files.keys()])) {
+    componentScopeDirs.add(dir);
+  }
+  const initCandidates = new Map<string, RebuildCandidate>();
+  const initOf = (scope: IterationScope, componentPath: string): RebuildCandidate => {
+    const key = scopeKeyOf(scope, componentPath);
+    const existing = initCandidates.get(key);
+    if (existing !== undefined) return existing;
+    const candidate: RebuildCandidate = {
+      dir: `${iterationBaseDir(scope, componentPath)}/${INIT_ITERATION_LABEL}`,
+      name: INIT_ITERATION_LABEL,
+      scope,
+      component_path: componentPath,
+      anchored: true,
+      active: false,
+      isDefault: false,
+      claims: [],
+      memberPaths: new Set(),
+      isInit: true,
+    };
+    initCandidates.set(key, candidate);
+    return candidate;
+  };
   for (const [path, props] of input.files) {
     if (props === undefined) continue;
     const present = ITERATION_PROPERTY_KEYS.filter((key) => props[key] !== undefined);
@@ -907,6 +961,28 @@ export function planIterationRebuild(input: {
       ? { scope: "project" as const, component_path: "" }
       : { scope: located.scope, component_path: located.component_path };
     if (located !== undefined) located.anchored = true;
+    if (props.iteration_label === INIT_ITERATION_LABEL) {
+      // init stamp: scope は「内側の named iteration dir」→「component scope dir」→
+      // project の順で解く。named dir 内の init stamp は矛盾ではなく、stamp の記録を
+      // 正として init の member に入れる (evidence mismatch は後段の warning)。
+      const initScope = located === undefined
+        ? { ...componentScopeOfPath(path, componentScopeDirs) }
+        : scope;
+      const init = initOf(initScope.scope, initScope.component_path);
+      init.claims.push({
+        seq: props.iteration,
+        created: props.iteration_created ?? "",
+        via: path,
+      });
+      init.memberPaths.add(path);
+      const initEvidence = new Set<RebuildCandidate>([init]);
+      for (const linker of linksByTarget.get(path) ?? []) initEvidence.add(linker);
+      if (located !== undefined && input.componentPaths.has(path)) {
+        initEvidence.add(located);
+      }
+      stampedEvidence.push({ path, claim: init, evidence: initEvidence });
+      continue;
+    }
     const claimDir = `${
       iterationBaseDir(scope.scope, scope.component_path)
     }/${props.iteration_label}`;
@@ -959,6 +1035,14 @@ export function planIterationRebuild(input: {
     const bucket = byScope.get(key);
     if (bucket === undefined) byScope.set(key, [candidate]);
     else bucket.push(candidate);
+  }
+  // `init` virtual candidate は dir scan から来ない — stamp が 1 件でも在れば
+  // scope bucket へ足し、claim 整合の検査は named candidate と同じ経路に乗せる。
+  for (const init of initCandidates.values()) {
+    const key = scopeKeyOf(init.scope, init.component_path);
+    const bucket = byScope.get(key);
+    if (bucket === undefined) byScope.set(key, [init]);
+    else bucket.push(init);
   }
   const rebuilt: RebuiltIteration[] = [];
   const reconstructed: ReconstructedIteration[] = [];
@@ -1069,6 +1153,295 @@ export function planIterationRebuild(input: {
     });
   }
 
+  // `init` の active: scope に active link を持つ iteration が 1 つも無い時だけ
+  // init が active + default になる (`iteration.init` migration と同じ裁定)。
+  for (const init of initCandidates.values()) {
+    const seq = seqByCandidate.get(init);
+    if (seq === undefined) continue; // failure 済み
+    const bucket = byScope.get(scopeKeyOf(init.scope, init.component_path)) ?? [];
+    const scopeHasActive = bucket.some((candidate) => candidate !== init && candidate.active);
+    init.active = !scopeHasActive;
+    init.isDefault = init.active;
+    rebuilt.push({
+      scope: init.scope,
+      component_path: init.component_path,
+      name: init.name,
+      seq,
+      created_at: init.claims[0]?.created ?? "",
+      dir: init.dir,
+      active: init.active,
+      is_default: init.isDefault,
+      member_paths: [...init.memberPaths].sort(),
+      is_init: true,
+    });
+  }
+
   if (failures.length > 0) return { ok: false, failures };
   return { ok: true, plan: { iterations: rebuilt }, warnings, reconstructed };
+}
+
+// ---------------------------------------------------------------------------
+// `init` migration (schema 8)
+// ---------------------------------------------------------------------------
+//
+// `init` は予約 root iteration — caller の `iteration.open` では作れず、
+// `iteration.init` (CLI kind) が scope ごとに 1 つ開く。dir skeleton /
+// `active` link / `current` symlink を持たず、scope に active が無い時だけ
+// active + default になる。pre-iteration content は member として init に
+// 畳まれ、generated key は `iteration: 0 / iteration_label: init` を刻む。
+
+/**
+ * component scope dir の発見 (migration 用)。
+ *
+ * scope の定義は裁定済み: (a) `<component>/<it>/` layout を既に持つ dir
+ * (caller が input.iterations の component_path から畳む) と (b) 自分の
+ * `docs/wish_*.md` と `spec/` を持つ dir。この関数は (b) を file 一覧から拾う。
+ */
+export function discoverComponentScopeDirs(files: readonly string[]): string[] {
+  const wishOwners = new Set<string>();
+  const specOwners = new Set<string>();
+  for (const path of files) {
+    const wish = /^(.+)\/docs\/wish_[^/]+\.md$/.exec(path);
+    if (wish?.[1] !== undefined) wishOwners.add(wish[1]);
+    const spec = /^(.+)\/spec\/[^/]+/.exec(path);
+    if (spec?.[1] !== undefined) specOwners.add(spec[1]);
+  }
+  const dirs: string[] = [];
+  for (const dir of wishOwners) {
+    if (specOwners.has(dir) && validateComponentPath(dir).ok) dirs.push(dir);
+  }
+  return dirs.sort();
+}
+
+/**
+ * path が属する scope。長い dir から先に試す prefix match — component scope dir の
+ * 内側にある file は component scope、それ以外は project scope。
+ * `discoverComponentScopeDirs` + DB iterations の component_path の和集合を渡す。
+ */
+export function componentScopeOfPath(
+  path: string,
+  componentScopeDirs: ReadonlySet<string>,
+): { scope: IterationScope; component_path: string } {
+  const plain = path.split("#", 1)[0] ?? path;
+  let best: string | undefined;
+  for (const dir of componentScopeDirs) {
+    if (!plain.startsWith(`${dir}/`)) continue;
+    if (best === undefined || dir.length > best.length) best = dir;
+  }
+  return best === undefined
+    ? { scope: "project", component_path: "" }
+    : { scope: "component", component_path: best };
+}
+
+/** `it-init-<hash>` — (scope, component_path) からの決定的採番 (rebuild と同じ FNV)。 */
+export function initIterationId(scope: IterationScope, componentPath: string): string {
+  const key = `${scope}${componentPath}${INIT_ITERATION_LABEL}`;
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < key.length; i += 1) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `it-init-${hash.toString(16).padStart(8, "0")}`;
+}
+
+/** `planIterationInit` の component 入力 (DB components 行の写し)。 */
+export type InitComponentInput = {
+  readonly component_id: string;
+  /** components.birth_iteration。未 backfill は undefined。 */
+  readonly birth_iteration?: string;
+  /** components.document_locator の path 部 (`#` 前)。file を持たない component は undefined。 */
+  readonly document_path?: string;
+};
+
+/** component 1 件の所属確定。`iteration_id` は init か named iteration。 */
+export type InitAssignment = {
+  readonly component_id: string;
+  readonly iteration_id: string;
+};
+
+export type IterationInitScopePlan = {
+  readonly scope: IterationScope;
+  readonly component_path: string;
+  /** 書き込む init row の id (既存なら再利用、新規なら `it-init-*`)。 */
+  readonly iteration_id: string;
+  /** DB に既に init row が在るなら false — INSERT を省く。 */
+  readonly create: boolean;
+  readonly created_at: string;
+  /** scope に active row が 1 つも無い → init を active + default にする。 */
+  readonly activate: boolean;
+  /** `birth_iteration IS NULL` の component の所属先 (init / named の区別は iteration_id)。 */
+  readonly assignments: readonly InitAssignment[];
+  /** init の doc member に入る .md path (component path 以外の scope content)。 */
+  readonly doc_members: readonly string[];
+  /** generated key を刻む file (member component の path + doc member)。 */
+  readonly stamp_paths: readonly string[];
+};
+
+export type IterationInitPlan = {
+  readonly scopes: readonly IterationInitScopePlan[];
+};
+
+export type IterationInitOutcome =
+  | { readonly ok: true; readonly plan: IterationInitPlan }
+  | { readonly ok: false; readonly failures: IterationTreeFailure[] };
+
+/**
+ * `iteration.init` の plan。scope ごとに予約 `init` row を開き、
+ * `birth_iteration IS NULL` の component と named iteration dir の外の document を
+ * member に畳む。**書き込みは呼び出し側** (1 transaction) — ここでは決めない。
+ *
+ * - scope の発見: project は必須、component scope は (a) DB iterations の
+ *   component_path と (b) `docs/wish_*` + `spec/` を持つ dir の和集合。
+ * - `birth_iteration IS NULL` の component: canonical path が named iteration dir
+ *   の内側ならそこへ birth (rebuild と同じ birth 規則)、それ以外は置き場所の
+ *   scope の init へ。locator が無い component は project init。
+ * - doc member: named dir の外に在る非 component `.md` を置き場所の scope の
+ *   init へ。`docs/sprints.md` (generated registry) は scope content ではないので除外。
+ * - active: scope に active row が 1 つも無い時だけ init を active + default。
+ *   既に active set を持つ scope の init は inactive 履歴として開く。
+ * - 矛盾 (name `init` で seq 0 以外の既存 row) は fail closed。
+ */
+export function planIterationInit(input: {
+  /** DB iterations の全行 (named + 既存 init)。 */
+  readonly iterations: readonly IterationInfo[];
+  /** DB components の全行。 */
+  readonly components: readonly InitComponentInput[];
+  /** repo 内の全 `.md` path (vault scan)。 */
+  readonly files: readonly string[];
+  /** active_iterations を持つ scope key (`<scope> <component_path>`) の集合。 */
+  readonly active_scope_keys: ReadonlySet<string>;
+  readonly now: string;
+  /** `docs/sprints.md` 等、doc member に畳まない generated file。 */
+  readonly excluded_doc_members?: readonly string[];
+}): IterationInitOutcome {
+  const failures: IterationTreeFailure[] = [];
+  const namedIterations = input.iterations.filter(
+    (iteration) => !isInitIteration(iteration),
+  );
+  const componentScopeDirs = new Set<string>();
+  for (const iteration of input.iterations) {
+    if (iteration.scope === "component") componentScopeDirs.add(iteration.component_path);
+  }
+  for (const dir of discoverComponentScopeDirs(input.files)) {
+    componentScopeDirs.add(dir);
+  }
+
+  const scopeKey = (scope: IterationScope, componentPath: string): string =>
+    `${scope} ${componentPath}`;
+  const scopeOrder: { scope: IterationScope; component_path: string }[] = [
+    { scope: "project", component_path: "" },
+    ...[...componentScopeDirs].sort().map((componentPath) => ({
+      scope: "component" as const,
+      component_path: componentPath,
+    })),
+  ];
+  const excluded = new Set(input.excluded_doc_members ?? []);
+  const componentPaths = new Set(
+    input.components
+      .map((component) => component.document_path)
+      .filter((path): path is string => path !== undefined),
+  );
+
+  // scope ごとの plan 器。init 向け / named 向けを同じ scope plan に畳む。
+  const plans = new Map<string, {
+    scope: IterationScope;
+    component_path: string;
+    init: IterationInfo | undefined;
+    assignments: InitAssignment[];
+    doc_members: Set<string>;
+    stamp_paths: Set<string>;
+  }>();
+  const planOf = (scope: IterationScope, componentPath: string) => {
+    const key = scopeKey(scope, componentPath);
+    const existing = plans.get(key);
+    if (existing !== undefined) return existing;
+    const init = input.iterations.find(
+      (iteration) =>
+        iteration.scope === scope && iteration.component_path === componentPath &&
+        iteration.name === INIT_ITERATION_LABEL,
+    );
+    if (init !== undefined && init.seq !== INIT_ITERATION_SEQ) {
+      failures.push({
+        path: `${iterationBaseDir(scope, componentPath)}/${INIT_ITERATION_LABEL}`,
+        reason:
+          `name init の既存 row が seq ${init.seq} — 予約 root は seq ${INIT_ITERATION_SEQ} 固定、矛盾なので fail closed`,
+      });
+    }
+    const plan = {
+      scope,
+      component_path: componentPath,
+      init,
+      assignments: [] as InitAssignment[],
+      doc_members: new Set<string>(),
+      stamp_paths: new Set<string>(),
+    };
+    plans.set(key, plan);
+    return plan;
+  };
+  for (const entry of scopeOrder) planOf(entry.scope, entry.component_path);
+
+  // birth backfill: NULL の component だけ。named dir の内側は named、それ以外は
+  // 置き場所の scope の init へ。birth 先の iteration へ member としても畳む。
+  for (const component of input.components) {
+    if (component.birth_iteration !== undefined) continue;
+    const path = component.document_path;
+    const located = path === undefined ? undefined : iterationContainingPath(path, namedIterations);
+    if (located !== undefined) {
+      const plan = planOf(located.scope, located.component_path);
+      plan.assignments.push({
+        component_id: component.component_id,
+        iteration_id: located.iteration_id,
+      });
+      if (path !== undefined) plan.stamp_paths.add(path);
+      continue;
+    }
+    const scope = path === undefined
+      ? { scope: "project" as const, component_path: "" }
+      : componentScopeOfPath(path, componentScopeDirs);
+    const target = planOf(scope.scope, scope.component_path);
+    target.assignments.push({
+      component_id: component.component_id,
+      iteration_id: "",
+    });
+    if (path !== undefined) target.stamp_paths.add(path);
+  }
+
+  // doc member: named dir の外にある非 component `.md` を scope の init へ。
+  for (const path of input.files) {
+    if (componentPaths.has(path) || excluded.has(path)) continue;
+    if (iterationContainingPath(path, namedIterations) !== undefined) continue;
+    const scope = componentScopeOfPath(path, componentScopeDirs);
+    const plan = planOf(scope.scope, scope.component_path);
+    plan.doc_members.add(path);
+    plan.stamp_paths.add(path);
+  }
+
+  if (failures.length > 0) return { ok: false, failures };
+
+  const scopes: IterationInitScopePlan[] = [];
+  for (const entry of scopeOrder) {
+    const plan = planOf(entry.scope, entry.component_path);
+    // init assignment (`iteration_id === ""`) はここで scope の init id へ確定する。
+    const initId = plan.init?.iteration_id ??
+      initIterationId(plan.scope, plan.component_path);
+    const assignments = plan.assignments.map((assignment) =>
+      assignment.iteration_id === ""
+        ? { component_id: assignment.component_id, iteration_id: initId }
+        : assignment
+    );
+    scopes.push({
+      scope: plan.scope,
+      component_path: plan.component_path,
+      iteration_id: initId,
+      create: plan.init === undefined,
+      created_at: plan.init?.created_at ?? input.now,
+      activate: !input.active_scope_keys.has(
+        scopeKey(plan.scope, plan.component_path),
+      ),
+      assignments,
+      doc_members: [...plan.doc_members].sort(),
+      stamp_paths: [...plan.stamp_paths].sort(),
+    });
+  }
+  return { ok: true, plan: { scopes } };
 }

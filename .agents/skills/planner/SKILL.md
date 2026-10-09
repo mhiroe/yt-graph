@@ -25,6 +25,138 @@ All Core interaction goes through the vendored runtime at
   writes `.workflow/repository.json` and creates the device-local DB under
   `.workflow.nosync/`.
 
+## Related-work gate — runs on EVERY entry
+
+Before registering a wish or planning a task — on every planner entry,
+regardless of who dispatched the work or how narrow the brief — run the
+related-work lookup (user ruling 2026-10-09: agents do only the literal
+ask unless the lookup is a gate; wall-bounce prompting does not scale).
+A brief's scope narrowing never exempts it.
+
+The lookup has three legs, all bounded:
+
+1. `.agents/skills/wish-query/scripts/wish_query.ts preflight
+   --title '<proposed outcome>'` — Core candidate evidence
+   (`wish_query.preflight`).
+2. `.agents/skills/wish-query/scripts/wish_query.ts body-scan
+   --term '<term>' [--term ...]` — bounded body-text scan over
+   `docs/wish_*.md`. Title tokens cannot reach prose design inside a
+   wish body (the 2026-10-09 miss), so this leg is mandatory; seed terms
+   from the proposed outcome plus the dispatch's key nouns.
+3. Read every origin document the dispatch/brief cites (PM-PM requests,
+   `.agent-state/intake/*`) — cited origins are inside the lookup set.
+
+Fail closed — do NOT register, plan, or mint when:
+
+- a leg returns `complete:false`, any truncation flag, or an adapter
+  error: re-run once with tighter bounds/terms; still unclean → report
+  to the dispatcher and stop;
+- the result is ambiguous about ownership;
+- the related set shows WIDER impact than the brief's claimed scope —
+  stop and raise scope to the user through the owning PM's question
+  route before any write (reference miss: t-01M4EX7NFQ, which accepted
+  an asakai-only slice while its cited PM-PM request already placed
+  sprint work in Core territory).
+
+Evidence line — one per Story:
+
+On pass, write ONE bounded line in the Story's identity prelude — a
+`> ` callout line adjacent to the `> [!meta]- w-…` / `^w-…` block (the
+same slot `> sprint:` uses; prelude lines never enter `body_hash`, so
+the line cannot stale-flag itself):
+
+    > related-work evidence: v1 at=<YYYY-MM-DDTHH:MMZ> story=<w-id>@<rev> owner=<id>@<rev>|no-match disposition=<candidate_found|no_match_within_bounds> bounds=scan:<n>/<lim>,cand:<n>/<lim> body=files:<n>/<cap>,set:<matched_digest>,terms:"<t1,t2>" origins=<n|none> outcome="<title, ≤40 chars>"
+
+- `story` is the owning wish's `component_id` + the `state_revision` at
+  evidence-write time (`wf4.sh revision <w-id>`); the rev is the
+  audit basis — later lifecycle transitions (e.g. `request_ready`) bump
+  it legitimately.
+- `set` is the body-scan's `matched_digest` (membership fingerprint of
+  the matched file set — content edits inside an unchanged set do not
+  alter it); `terms` are the exact normalized scan terms, so the delta
+  check re-runs byte-identically.
+- Write or refresh the line at the END of the planning pass (after task
+  mints); refresh in place on every later planner entry — one canonical
+  line, never a trail.
+- A truncated leg blocks the write: `truncated` never appears in a
+  committed line.
+- Candidate lists never persist — the line records ids, counts, and the
+  digest only.
+- Keep the whole line ≤ ~480 chars.
+
+Related-set line — one per Story, beside the evidence line:
+
+On pass the planner also resolves WHICH Stories are related and how —
+a planner run plans a wish TOGETHER with its related set, never in
+isolation (user ruling 2026-10-09). Write ONE bounded `> ` line in the
+same identity-prelude slot (adjacent to `> related-work evidence:`):
+
+    > related set: v1 owner=<w-id|none> sibling=<w-id,...|none> duplicate=<w-id,...|none> blocks=<w-id,...|none> blocked-by=<w-id,...|none>
+
+- Classes (relative to the primary Story): `owner` — the related Story
+  owns the overlapping scope (defer or coordinate through it);
+  `sibling` — adjacent non-overlapping scope in the same area;
+  `duplicate` — overlap large enough to propose merge/drop; `blocks` —
+  the primary blocks it; `blocked-by` — it blocks the primary.
+- Bounds: ≤8 ids total, ≤4 per class, comma-separated with no spaces,
+  `none` for an empty class, whole line ≤ ~480 chars. A set that does
+  not fit the line is itself the "wider impact" halt — raise scope to
+  the user before writing anything.
+- Write it even when the lookup found nothing (all classes `none`) —
+  the line proves the classification ran. Refresh in place on every
+  planner entry, never a trail.
+- This is the run's RESOLVED set, not the raw candidate list — the
+  candidate-lists-never-persist rule still stands.
+- The durable relations themselves land as standing
+  `Blocks:`/`Blocked by:`/`Related:`/`Coordinated with:` lines in the
+  Story's `### Cross-wish dependencies and triggers` section (create
+  the section if absent) — same pass, both records agree.
+
+## Related-set planning — cross-wish edits
+
+The run may apply edits to any Story inside the recorded related set.
+Each seam is gated by the thing it actually mutates — never reuse the
+primary's revision or hash on a related Story.
+
+- **Move a task between Stories** — `wf4.sh cli
+  '{"kind":"document.read_task","component_id":"<t-id>"}'` (fetch
+  `block_hash` + `owner_locator`), then
+  `wf4.sh cli '{"kind":"document.move_task","component_id":"<t-id>",
+  "expected_hash":"<block_hash>","new_parent_component_id":"<related
+  Story or section node>"}'`. The gate is the MOVED block's hash — it
+  does not detect concurrent edits to the destination Story, so
+  sequence moves last in a pass and let `cutover.bind` reconcile the
+  doc↔DB projection afterwards. Works within one file and across files;
+  `noop` if already there, `conflict` on a stale hash — never retry a
+  conflict without re-reading.
+- **Mint a task on a related Story** — `document.create_task` with the
+  RELATED wish's `component_id` + `expected_revision` (re-read
+  `wf4.sh revision <w-id>` immediately before use), locator inside its
+  own doc (same shape as under "Requests").
+- **Cross-wish relation lines** — prose `Blocks:`/`Blocked by:`/
+  `Related:`/`Coordinated with:` lines in BOTH Stories'
+  `### Cross-wish dependencies and triggers` sections. These are plain
+  doc edits under `docs_only` — there is no dedicated Core op for them,
+  and Core `relation.attach` types are lineage semantics only and must
+  not be stretched for topical links (standing convention). Apply them
+  deliberately, one line per side; every added line is disclosed in the
+  readiness package.
+- **Split a related Story** — additive only: `component.register` for
+  the new Story, then task moves + relation lines. A split never drops
+  the source Story.
+- **Merge / drop of a related Story** — PROPOSAL only. Execution stays
+  user-gated via `wish.transition` carrying the user's verbatim reason;
+  planner lists the proposal in the readiness package and never fires
+  the transition itself.
+- **Dry-run mode** — the pass emits the related set plus the per-Story
+  proposal and preview diff while mutating nothing else: no task
+  moves/mints, no relation lines, no lifecycle requests. The only
+  writes are the two identity-prelude lines (they never enter
+  `body_hash`, so the projected body is untouched). This is the
+  organize step's dry-run shape (sprint design, Q5).
+- The wider-impact halt stands unchanged: a related set showing scope
+  beyond the brief stops the run before any write.
+
 ## Requests
 
 Existing wish:
@@ -82,9 +214,17 @@ Before presenting the readiness decision, confirm the wish document carries
 (user ruling 2026-09-29, sufficiency classes 3-4):
 
 - An **Open questions** list holding every pending user question — each one
-  also sent through the single user-question channel (`gm`, per `herdr.md`).
+  routed by decision class (`herdr.md` "User questions (routing by decision
+  class)"): a co-present direct user turn may be answered in the PM's own
+  reply; absent user, a user-decision question goes to `gm_secretary`
+  (intake) and a gm-judgment question to `gm`.
 - The wish's **cross-wish dependencies and triggers** — what it blocks, what
   blocks it, and any pre-authorized wake path.
+- The **related-set impact** — for every member of the recorded related set,
+  one line stating what this plan does to it: relation lines added, tasks
+  moved/minted, a split applied, a merge/drop proposal pending the user
+  gate, or `no change`. A related Story the run touched is never absent
+  from the package.
 
 Neither may live only in a PM file, handoff note, or dispatch claim. If a
 question or dependency is still external, write it into the document first,
@@ -94,6 +234,17 @@ then present readiness.
 
 - `mutation_scope` is `docs_only`: planner edits the wish's Markdown document
   and spec text, never implementation code.
+- The related set rides the EXISTING request shape — `skill.phase` planner
+  still opens `wish.plan_begin` on ONE wish. There is no multi-wish request
+  kind in the harness (decision t-01M4F8WHHK, 2026-10-09): `docs_only` is a
+  phase-level scope, not per-component, so a single `plan_begin` already
+  covers doc edits on related Stories; and every cross-wish mutation seam
+  (`document.move_task` / `document.create_task` / `wish.transition`)
+  already carries its own gate on the mutated object (block hash / target
+  revision / user verbatim) — a batched related-set request would add
+  Core contract surface for zero new capability. The skill loops per
+  related wish instead. Revisit only if a
+  future need demands one atomic multi-wish transaction.
 - Re-entering planner on a wish that is already in `plan` is a resume: the
   `wish.plan_begin` response reports `noop` (the state already holds) and the
   run still completes with `docs_only` open — proceed to the document work.

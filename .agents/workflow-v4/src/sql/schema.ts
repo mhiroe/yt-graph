@@ -19,8 +19,11 @@
  *   `active_iterations` (set + `is_default` partial unique) へ置き換え、
  *   `iterations.closed_at` を drop して `last_modified` を足す。`iterations` を
  *   再構成するので migration 6 -> 7 は `foreign_keys_off` で table rebuild。
+ * - `8`: sprint (`docs/candidate/workflow-v4/sprints.md`)。`sprints` /
+ *   `sprint_members` / `current_sprints` の 3 table。追加だけなので rebuild せず
+ *   CREATE のみ。sprint も component aggregate ではなく、domain_events を出さない。
  */
-export const WORKFLOW_SCHEMA_VERSION = 7;
+export const WORKFLOW_SCHEMA_VERSION = 8;
 
 /** ER 図の initial minimum。順序は依存ではなく ER 図の並びに合わせる。 */
 export const WORKFLOW_TABLE_NAMES = [
@@ -41,6 +44,9 @@ export const WORKFLOW_TABLE_NAMES = [
   "iteration_components",
   "iteration_members",
   "iteration_doc_members",
+  "sprints",
+  "sprint_members",
+  "current_sprints",
 ] as const;
 
 export type WorkflowTableName = (typeof WORKFLOW_TABLE_NAMES)[number];
@@ -188,6 +194,44 @@ export const ITERATION_DOC_MEMBERS_TABLE_DDL = `CREATE TABLE iteration_doc_membe
  */
 export const COMPONENTS_BIRTH_ITERATION_ALTER =
   `ALTER TABLE components ADD COLUMN birth_iteration TEXT REFERENCES iterations (iteration_id)`;
+
+// ---------------------------------------------------------------------------
+// sprint (schema 8、docs/candidate/workflow-v4/sprints.md)
+//
+// sprint も component aggregate ではなく DB row。iteration 1 件に属し、
+// seq は iteration 内で 1 から振り直す。issued_seq は repo 全体の発行順。
+// previous_sprint_id の UNIQUE は「同じ sprint を prev に持つ後続が 2 つある」
+// 分岐を DDL で塞ぐ。row と roster は発行後は immutable — 差分は新しい sprint
+// issue でしか表れず、現在位置は current_sprints の head pointer が持つ。
+// ---------------------------------------------------------------------------
+
+export const SPRINTS_TABLE_DDL = `CREATE TABLE sprints (
+  sprint_id           TEXT    NOT NULL PRIMARY KEY,
+  iteration_id        TEXT    NOT NULL REFERENCES iterations (iteration_id),
+  seq                 INTEGER NOT NULL CHECK (seq >= 1),
+  issued_seq          INTEGER NOT NULL CHECK (issued_seq >= 1),
+  previous_sprint_id  TEXT    REFERENCES sprints (sprint_id),
+  goal                TEXT    NOT NULL,
+  accepted            TEXT    NOT NULL,
+  baseline_ref        TEXT,
+  issued_at           TEXT    NOT NULL,
+  UNIQUE (iteration_id, seq),
+  UNIQUE (issued_seq),
+  UNIQUE (previous_sprint_id)
+)`;
+
+export const SPRINT_MEMBERS_TABLE_DDL = `CREATE TABLE sprint_members (
+  sprint_id       TEXT    NOT NULL REFERENCES sprints (sprint_id),
+  component_id    TEXT    NOT NULL REFERENCES components (component_id),
+  state_revision  INTEGER NOT NULL CHECK (state_revision >= 0),
+  PRIMARY KEY (sprint_id, component_id)
+)`;
+
+export const CURRENT_SPRINTS_TABLE_DDL = `CREATE TABLE current_sprints (
+  iteration_id TEXT NOT NULL PRIMARY KEY REFERENCES iterations (iteration_id),
+  sprint_id    TEXT NOT NULL REFERENCES sprints (sprint_id),
+  updated_at   TEXT NOT NULL
+)`;
 
 /**
  * COMPONENTS の DDL。初期化と、`dropped` 追加で CHECK が変わった schema 5 への migration
@@ -394,4 +438,9 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
   ITERATION_MEMBERS_TABLE_DDL,
   ITERATION_DOC_MEMBERS_TABLE_DDL,
   COMPONENTS_BIRTH_ITERATION_ALTER,
+
+  // 14. sprint (schema 8)。追加だけなので migration も同じ文を CREATE のみで使う。
+  SPRINTS_TABLE_DDL,
+  SPRINT_MEMBERS_TABLE_DDL,
+  CURRENT_SPRINTS_TABLE_DDL,
 ];

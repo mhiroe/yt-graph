@@ -26,11 +26,12 @@ import { type EventId, parseEventId } from "../ids.ts";
 import { parseChildId, parseChildLink } from "../children.ts";
 import {
   listMindWishLinks,
+  locatorResolverOf,
   type MindWishLinkView,
   readDocumentProjection,
 } from "../sql/document_projection.ts";
 import { parseJournalRecord } from "../replication.ts";
-import type { SqliteWorkflowStore } from "../sql/store.ts";
+import type { ListedComponent, SqliteWorkflowStore } from "../sql/store.ts";
 import {
   type ComponentIdAllocator,
   registerExistingVaultComponent,
@@ -73,10 +74,12 @@ import {
 import { scanRepository, type ScanResult, type VaultScanPort } from "../cutover/scan.ts";
 import { bindAnchors, previewBind, rebindComponent } from "../cutover/bind.ts";
 import { auditCutover } from "../cutover/audit.ts";
-import { isIterationOperation } from "../decide.ts";
+import { decideCommandWithSprints, isIterationOperation } from "../decide.ts";
 import {
   activeLinkPath,
   currentLinkPath,
+  type InitComponentInput,
+  isInitIteration,
   iterationDirOf,
   type IterationFsPort,
   type IterationHistoryPort,
@@ -86,6 +89,7 @@ import {
   type IterationTreeFailure,
   memberLinkPath,
   parseIterationScope,
+  planIterationInit,
   planIterationRebuild,
   readIterationProperties,
   type ReconstructedIteration,
@@ -93,18 +97,45 @@ import {
   validateComponentPath,
   validateIterationLabel,
 } from "../iterations.ts";
+import { rowString } from "../sql/driver.ts";
 import {
   activeIterationsOf,
+  applyIterationInit,
   applyIterationRebuild,
   componentDocumentPaths,
   defaultIterationOf,
   effectiveIterationOf,
   effectiveIterationOfPath,
+  iterationById,
   iterationDocMembersOf,
+  iterationLookupOf,
   iterationMembersOf,
   listAllIterations,
   listIterations,
 } from "../sql/iterations.ts";
+import {
+  applySprintIssueText,
+  parseSprintRegistry,
+  renderSprintEntry,
+  renderSprintRegistry,
+  scanSprintBindings,
+  SPRINT_REGISTRY_PATH,
+  type SprintInfo,
+  type SprintRegistryEntry,
+} from "../sprints.ts";
+import {
+  applySprintRegistryPlan,
+  expectedSprintBinding,
+  listSprints,
+  planSprintRegistryAdoption,
+  sprintById,
+  sprintEntriesForRegistry,
+  sprintHeadOf,
+  sprintHeadsOf,
+  sprintLookupOf,
+  sprintMembersOf,
+} from "../sql/sprints.ts";
+import { allocateSprintId } from "../vault_ids.ts";
 import {
   buildWishQueryResult,
   WISH_QUERY_CANDIDATE_MAX,
@@ -216,6 +247,17 @@ export const CLI_REQUEST_KINDS = [
   "iteration.list",
   "iteration.current",
   "iteration.repair",
+  // `iteration.init` (schema 8): 予約 root iteration を scope ごとに開く
+  // migration op — repair 系と同じく DB へ直接書く CLI kind。`dry_run: true` で
+  // 変更一覧だけを返す。
+  "iteration.init",
+  // sprint (schema 8)。write は `workflow.submit` の `sprint.issue` typed command が
+  // 担う (operation ledger)。ここにあるのは read と repair — `iteration.repair` と
+  // 同じく registry (committed tree) <-> DB の reconcile を直接書く口。
+  "sprint.current",
+  "sprint.list",
+  "sprint.members",
+  "sprint.repair",
 ] as const;
 export type CliRequestKind = (typeof CLI_REQUEST_KINDS)[number];
 
@@ -419,6 +461,15 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
     case "workflow.submit": {
       const parsed = parseCommand(raw["command"]);
       if (!parsed.ok) return failure(kind, parsed.error, CLI_EXIT_BAD_REQUEST);
+      // `sprint.issue` の dry_run: ledger を通さない読み取り専用 plan。
+      // decide をそのまま read-only で走らせ、採番 preview も付ける (採番した ID は
+      // この呼び出しでは commit されない — replay しても ledger は増えない)。
+      if (
+        parsed.value.operation === "sprint.issue" &&
+        parsed.value.payload["dry_run"] === true
+      ) {
+        return sprintIssuePreview(kind, ports, parsed.value);
+      }
       // `iteration.open` の dir 衝突は DB commit 前に閉じる (裁定: target dir が在れば
       // fail closed)。fs は transaction に乗らないので、ここで先に見て、既存 dir への
       // open は ledger に残さず conflict で返す。
@@ -473,13 +524,22 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
           if (warning !== undefined) iterationWarnings.push(warning);
         }
       }
+      // sprint.issue applied: registry + `sprint:` binding の投影は commit 後の
+      // 派生作業。失敗は command の成否にせず warning — `sprint.repair` が組み直す。
+      const sprintWarnings = response.value.disposition === "applied" &&
+          parsed.value.operation === "sprint.issue" &&
+          response.value.sprint !== undefined
+        ? projectSprintIssue(ports, response.value.sprint)
+        : [];
       return {
         kind,
         ok: true,
         exit_code: exitForDisposition(response.value.disposition),
-        result: iterationWarnings.length === 0
-          ? response.value
-          : { ...response.value, iteration_fs_warnings: iterationWarnings },
+        result: iterationWarnings.length === 0 && sprintWarnings.length === 0 ? response.value : {
+          ...response.value,
+          ...(iterationWarnings.length === 0 ? {} : { iteration_fs_warnings: iterationWarnings }),
+          ...(sprintWarnings.length === 0 ? {} : { sprint_projection_warnings: sprintWarnings }),
+        },
       };
     }
 
@@ -640,8 +700,8 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
       }
       const limit = boundedPositiveInteger(raw, "limit", 25, 100);
       if (!limit.ok) return failure(kind, limit.error, CLI_EXIT_BAD_REQUEST);
-      const page = ports.store.readSnapshot(() =>
-        ports.store.listComponents({
+      const snapshot = ports.store.readSnapshot(() => {
+        const page = ports.store.listComponents({
           ...(componentId === undefined ? {} : { component_id: componentId.value }),
           ...(componentKind === undefined ? {} : { component_kinds: [componentKind.value] }),
           ...(status.value === undefined ? {} : { status: status.value }),
@@ -650,8 +710,12 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
             ? {}
             : { state_changed_since: stateChangedSince.value }),
           limit: limit.value,
-        })
-      );
+        });
+        // row の `sprint` field: `> sprint:` binding と同じ規則の effective
+        // binding (component.list は wish-query adapter の list 脚でもある)。
+        const sprintBindings = sprintBindingsOf(ports.store, page.components);
+        return { page, sprintBindings };
+      });
       return {
         kind,
         ok: true,
@@ -659,9 +723,12 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
         result: {
           schema: "wf4.component-list.v1",
           repository_id: ports.store.context.repository_id,
-          components: page.components,
-          limit: page.limit,
-          truncated: page.has_more,
+          components: snapshot.page.components.map((component) => {
+            const sprint = snapshot.sprintBindings.get(component.component_id);
+            return sprint === undefined ? component : { ...component, sprint };
+          }),
+          limit: snapshot.page.limit,
+          truncated: snapshot.page.has_more,
         },
       };
     }
@@ -748,7 +815,10 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
         const outgoing = subject === undefined || subjectState === undefined
           ? []
           : ports.store.outgoingRelations(subject.value);
-        return { subjectState, page, outgoing };
+        // candidate row の `sprint` field: `> sprint:` binding と同じ規則の
+        // effective binding (component の effective iteration 内の最新 sprint)。
+        const sprintBindings = sprintBindingsOf(ports.store, page.components);
+        return { subjectState, page, outgoing, sprintBindings };
       });
       if (subject !== undefined && snapshot.subjectState === undefined) {
         return failure(kind, {
@@ -767,6 +837,7 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
         ...(expected === undefined ? {} : { expected_revision: expected.value }),
         components: snapshot.page.components,
         outgoing_relations: snapshot.outgoing,
+        sprint_bindings: snapshot.sprintBindings,
         scan_limit: scanLimit.value,
         candidate_limit: candidateLimit.value,
         scan_truncated: snapshot.page.has_more,
@@ -800,7 +871,26 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
       if (!path.ok) return failure(kind, path.error, CLI_EXIT_BAD_REQUEST);
       const nodes = ports.document.listNodes(path.value);
       if (!nodes.ok) return failure(kind, nodes.error, CLI_EXIT_NOT_APPLIED);
-      return { kind, ok: true, exit_code: CLI_EXIT_OK, result: nodes.value };
+      // `sprint` field: node の component を effective iteration 内の最新
+      // sprint が roster に持てばその sprint_id を載せる (DB 正本 —
+      // `> sprint:` binding と同じ規則)。port は fs だけを読むのでここで enrich する。
+      const enriched = ports.store.readSnapshot(() =>
+        nodes.value.nodes.map((node) => {
+          if (node.component_id === undefined) return node;
+          const sprint = expectedSprintBinding(
+            ports.store.driver,
+            node.component_id,
+            path.value,
+          );
+          return sprint === undefined ? node : { ...node, sprint: sprint.sprint_id };
+        })
+      );
+      return {
+        kind,
+        ok: true,
+        exit_code: CLI_EXIT_OK,
+        result: { ...nodes.value, nodes: enriched },
+      };
     }
 
     case "relation.list_outgoing": {
@@ -2002,6 +2092,101 @@ export function dispatch(ports: CliPorts, request: unknown): CliResponse {
       }
       return repairIterations(kind, ports, fs);
     }
+
+    case "sprint.current": {
+      // head の read。`iteration_id` で直接、または scope の default iteration で解く
+      // (省略は project scope)。iteration が無ければ head も無いので null。
+      const iteration = sprintIterationArg(raw, ports);
+      if (!iteration.ok) return failure(kind, iteration.error, CLI_EXIT_BAD_REQUEST);
+      if (iteration.value.missing !== undefined) {
+        return {
+          kind,
+          ok: true,
+          exit_code: CLI_EXIT_NOT_APPLIED,
+          result: {
+            disposition: "not_found",
+            reason: `iteration ${iteration.value.missing} が無い`,
+          },
+        };
+      }
+      if (iteration.value.iteration === undefined) {
+        return { kind, ok: true, exit_code: CLI_EXIT_OK, result: { sprint: null } };
+      }
+      const head = sprintHeadOf(ports.store.driver, iteration.value.iteration.iteration_id);
+      return {
+        kind,
+        ok: true,
+        exit_code: CLI_EXIT_OK,
+        result: { iteration: iteration.value.iteration, sprint: head ?? null },
+      };
+    }
+
+    case "sprint.list": {
+      const sprints = sprintListArgs(raw, ports);
+      if (!sprints.ok) return failure(kind, sprints.error, CLI_EXIT_BAD_REQUEST);
+      if (sprints.value.missing !== undefined) {
+        return {
+          kind,
+          ok: true,
+          exit_code: CLI_EXIT_NOT_APPLIED,
+          result: {
+            disposition: "not_found",
+            reason: `iteration ${sprints.value.missing} が無い`,
+          },
+        };
+      }
+      return {
+        kind,
+        ok: true,
+        exit_code: CLI_EXIT_OK,
+        result: { sprints: sprints.value.sprints },
+      };
+    }
+
+    case "sprint.members": {
+      const sprintId = raw["sprint_id"];
+      if (typeof sprintId !== "string" || sprintId === "") {
+        return failure(kind, {
+          code: "missing_field",
+          message: "sprint_id が必要",
+          path: "sprint_id",
+        }, CLI_EXIT_BAD_REQUEST);
+      }
+      const sprint = sprintById(ports.store.driver, sprintId);
+      if (sprint === undefined) {
+        return {
+          kind,
+          ok: true,
+          exit_code: CLI_EXIT_NOT_APPLIED,
+          result: { disposition: "not_found", reason: `sprint ${sprintId} が無い` },
+        };
+      }
+      // 発行時 revision に対する現在 revision — roster が読む stale 検査用の情報。
+      const members = sprintMembersOf(ports.store.driver, sprintId).map((member) => {
+        const parsed = parseComponentId(member.component_id, "component_id");
+        const state = parsed.ok ? ports.store.lookup(parsed.value) : undefined;
+        return {
+          ...member,
+          ...(state === undefined ? {} : {
+            current_revision: state.state_revision,
+            kind: state.kind,
+            ...(state.status === undefined ? {} : { status: state.status }),
+          }),
+        };
+      });
+      return {
+        kind,
+        ok: true,
+        exit_code: CLI_EXIT_OK,
+        result: { sprint, members },
+      };
+    }
+
+    case "sprint.repair":
+      return repairSprints(kind, ports);
+
+    case "iteration.init":
+      return initIterations(kind, raw, ports);
   }
 }
 
@@ -2027,6 +2212,46 @@ function iterationDirCollision(fs: IterationFsPort, command: Command): string | 
   return fs.exists(dir)
     ? `iteration dir は既に存在する (fail closed、上書きしない): ${dir}`
     : undefined;
+}
+
+/**
+ * `document_locator` (`path#heading` / `path#^id` / bare `path`) から file path を
+ * 取り出す。path 側は `#` を持たない (parseDocumentLocator の contract) なので
+ * 最初の `#` で切る。locator が無い / 形が壊れている component は undefined —
+ * effective iteration の解決は project scope へ落ちる。
+ */
+function documentPathOfLocator(locator: string | undefined): string | undefined {
+  if (locator === undefined) return undefined;
+  const index = locator.indexOf("#");
+  const path = index < 0 ? locator : locator.slice(0, index);
+  return path === "" ? undefined : path;
+}
+
+/**
+ * component 集合の effective sprint binding を DB から引く (`> sprint:`
+ * binding と同じ規則 — component の effective iteration 内の最新 sprint)。
+ * read kind が共通で使う component_id -> sprint_id の写像。
+ *
+ * `locator_truncated` の component は skip する — 切り詰められた locator の
+ * path は scope 解決に使えず、誤った scope の sprint を拾う可能性がある
+ * (truncated input への silent fallback 禁止)。field 無しで返す方が
+ * 誤った binding より安全。
+ */
+function sprintBindingsOf(
+  store: SqliteWorkflowStore,
+  components: readonly ListedComponent[],
+): Map<ComponentId, string> {
+  const bindings = new Map<ComponentId, string>();
+  for (const component of components) {
+    if (component.locator_truncated) continue;
+    const sprint = expectedSprintBinding(
+      store.driver,
+      component.component_id,
+      documentPathOfLocator(component.document_locator),
+    );
+    if (sprint !== undefined) bindings.set(component.component_id, sprint.sprint_id);
+  }
+  return bindings;
 }
 
 /** iteration read kind の共通引数。project scope は `component_path` を持たない ("" sentinel)。 */
@@ -2171,6 +2396,9 @@ function reconcileIterationLinks(
   const actives = activeIterationsOf(ports.store.driver, scope, componentPath);
   const expected = new Set<string>();
   for (const it of actives) {
+    // `init` は dir / link を持たない — active row が在っても link は書かない
+    // (期待集合にも入れないので stray `active/init` は stale prune の対象)。
+    if (isInitIteration(it)) continue;
     expected.add(it.name);
     const link = activeLinkPath(scope, componentPath, it.name);
     const written = fs.writeSymlink(link, relativeSymlinkTarget(link, iterationDirOf(it)));
@@ -2190,7 +2418,9 @@ function reconcileIterationLinks(
   }
   const currentLink = currentLinkPath(scope, componentPath);
   const def = defaultIterationOf(ports.store.driver, scope, componentPath);
-  if (def === undefined) {
+  // `init` が default の scope でも `current` symlink は張らない — init に
+  // dir が無いので指す先が存在しない。
+  if (def === undefined || isInitIteration(def)) {
     const removed = fs.removeSymlink(currentLink);
     if (!removed.ok) warnings.push(`${removed.error.code}: ${removed.error.message}`);
     else if (removed.value.changed) changed += 1;
@@ -2366,6 +2596,9 @@ function repairIterations(
   // --- phase 2: DB -> fs ---
   const all = listAllIterations(ports.store.driver);
   for (const iteration of all) {
+    // `init` は dir / member link を持たない — member そのものは後段の
+    // stamp pass が拾うのでここでは skeleton / link を組まない。
+    if (isInitIteration(iteration)) continue;
     // git は空 dir を commit しないので、committed tree では subdir が欠けうる。
     // `createSkeleton` ではなく `ensureSkeleton` — 欠けた分だけを補う。
     const ensured = fs.ensureSkeleton(iterationDirOf(iteration));
@@ -2512,4 +2745,550 @@ function resolveWishLinks(
     }
   });
   return ok(resolved);
+}
+
+// ---------------------------------------------------------------------------
+// sprint (schema 8)
+// ---------------------------------------------------------------------------
+
+/**
+ * `sprint.issue` の dry_run — decide を read-only で走らせ、ledger / fs を
+ * 一切書かずに発行予定の row と projection を返す。sprint_id は仮採番 (commit
+ * される時に取り直されるので、preview と実発行で id が違いうる)。
+ */
+function sprintIssuePreview(kind: string, ports: CliPorts, command: Command): CliResponse {
+  const allocated = allocateSprintId(
+    Date.now(),
+    (candidate) => sprintById(ports.store.driver, candidate) !== undefined,
+  );
+  if (!allocated.ok) return failure(kind, allocated.error, CLI_EXIT_BAD_REQUEST);
+  const decided = decideCommandWithSprints({
+    command,
+    context: ports.store.context,
+    lookup: ports.store.lookup,
+    relationLookup: ports.store.relationLookup,
+    eventLookup: ports.store.eventLookup,
+    iterationLookup: iterationLookupOf(ports.store.driver),
+    documentLocatorLookup: locatorResolverOf(ports.store),
+    sprintLookup: sprintLookupOf(ports.store.driver),
+    now: new Date().toISOString(),
+    allocated_sprint_id: allocated.value,
+  });
+  if (!decided.ok) return failure(kind, decided.error, CLI_EXIT_BAD_REQUEST);
+  const decision = decided.value;
+  const entry = decision.sprint_effect?.kind === "issue"
+    ? sprintRegistryEntryOf(ports, decision.sprint_effect.sprint)
+    : undefined;
+  return {
+    kind,
+    ok: true,
+    exit_code: exitForDisposition(decision.response.disposition),
+    result: {
+      dry_run: true,
+      ...decision.response,
+      ...(decision.sprint_effect === undefined || entry === undefined ? {} : {
+        projection: {
+          members: decision.sprint_effect.members,
+          registry_entry_preview: renderSprintEntry(entry),
+          bindings: decision.sprint_effect.members.length,
+        },
+      }),
+    },
+  };
+}
+
+/** SprintInfo (DB row) -> registry entry の写し。`iteration` label は row から引く。 */
+function sprintRegistryEntryOf(ports: CliPorts, sprint: SprintInfo): SprintRegistryEntry {
+  const iteration = iterationById(ports.store.driver, sprint.iteration_id);
+  return {
+    sprint_id: sprint.sprint_id,
+    label: sprint.label,
+    iteration: iteration?.name ?? "",
+    iteration_id: sprint.iteration_id,
+    scope: sprint.scope,
+    component_path: sprint.component_path,
+    seq: sprint.seq,
+    issued_seq: sprint.issued_seq,
+    ...(sprint.previous_sprint_id === undefined
+      ? {}
+      : { previous_sprint_id: sprint.previous_sprint_id }),
+    goal: sprint.goal,
+    issued_at: sprint.issued_at,
+    ...(sprint.baseline_ref === undefined ? {} : { baseline_ref: sprint.baseline_ref }),
+    accepted: sprint.accepted,
+    roster: sprintMembersOf(ports.store.driver, sprint.sprint_id),
+  };
+}
+
+/**
+ * applied な `sprint.issue` の projection。**DB commit 後にだけ呼ぶ。**
+ *
+ * - `docs/sprints.md`: 既存 file を読んで surgical に追記 (温存 — v1 leftover や
+ *   手編集の残滓を issue が消さない)。既存 file が読めない / vault_scan 未注入なら
+ *   書かず warning (canonical render で clobber しない — `sprint.repair` が組む)。
+ * - `> sprint:` binding: roster の全員へ upsert。
+ *
+ * どちらも失敗は command の成否にせず warning — 再投影は `sprint.repair` が担う。
+ */
+function projectSprintIssue(ports: CliPorts, sprint: SprintInfo): string[] {
+  const warnings: string[] = [];
+  const members = sprintMembersOf(ports.store.driver, sprint.sprint_id);
+  const document = ports.document;
+  if (document.writeSprintRegistry === undefined) {
+    warnings.push(
+      "document port に writeSprintRegistry が無い — registry は sprint.repair で再投影する",
+    );
+  } else {
+    const read = ports.vault_scan?.read(SPRINT_REGISTRY_PATH);
+    if (read === undefined) {
+      warnings.push(
+        "vault_scan port 未注入 — 既存 registry の有無を確かめられないので " +
+          "書き込まない (sprint.repair で再投影する)",
+      );
+    } else if (!read.ok && read.error.code !== "document_not_found") {
+      warnings.push(
+        `${SPRINT_REGISTRY_PATH} が読めない: ${read.error.message} — ` +
+          "sprint.repair で再投影する",
+      );
+    } else {
+      const heads = sprintHeadsOf(ports.store.driver);
+      const applied = applySprintIssueText(
+        read.ok ? read.value : undefined,
+        ports.store.context.repository_id,
+        heads,
+        sprintRegistryEntryOf(ports, sprint),
+      );
+      if (!applied.ok) {
+        warnings.push(
+          `${SPRINT_REGISTRY_PATH} の追記が失敗: ${applied.error.message} — ` +
+            "sprint.repair で再投影する",
+        );
+      } else {
+        const written = document.writeSprintRegistry({ content: applied.value.raw });
+        if (!written.ok) {
+          warnings.push(
+            `${SPRINT_REGISTRY_PATH} の書き込みが失敗: ${written.error.message} — ` +
+              "sprint.repair で再投影する",
+          );
+        }
+      }
+    }
+  }
+  if (document.stampSprintBinding === undefined) {
+    warnings.push(
+      "document port に stampSprintBinding が無い — sprint: binding は sprint.repair で再投影する",
+    );
+  } else {
+    for (const member of members) {
+      const stamped = document.stampSprintBinding({
+        component_id: member.component_id,
+        sprint_id: sprint.sprint_id,
+      });
+      if (!stamped.ok) {
+        warnings.push(
+          `${member.component_id} の sprint: 刻印が失敗: ${stamped.error.message}`,
+        );
+      }
+    }
+  }
+  return warnings;
+}
+
+/** `sprint.current` / `sprint.list` の iteration 解決結果。`missing` は not_found。 */
+type SprintIterationArg = {
+  readonly iteration?: IterationInfo;
+  readonly missing?: string;
+};
+
+/** `sprint.current` の iteration 解決。`iteration_id` > scope default > project default。 */
+function sprintIterationArg(
+  raw: Record<string, unknown>,
+  ports: CliPorts,
+): Result<SprintIterationArg> {
+  const driver = ports.store.driver;
+  const iterationId = raw["iteration_id"];
+  if (iterationId !== undefined) {
+    if (typeof iterationId !== "string" || iterationId === "") {
+      return err(
+        "invalid_field_type",
+        "iteration_id は非空の string である必要がある",
+        "iteration_id",
+      );
+    }
+    const iteration = iterationById(driver, iterationId);
+    return iteration === undefined ? ok({ missing: iterationId }) : ok({ iteration });
+  }
+  const scope = iterationScopeArgs(raw);
+  if (!scope.ok) return scope;
+  const iteration = defaultIterationOf(
+    driver,
+    scope.value.scope,
+    scope.value.component_path,
+  );
+  return ok(iteration === undefined ? {} : { iteration });
+}
+
+/** `sprint.list` の絞り込み。`iteration_id` > scope (全 iteration 分) > repo 全体。 */
+function sprintListArgs(
+  raw: Record<string, unknown>,
+  ports: CliPorts,
+): Result<{ sprints: readonly SprintInfo[]; missing?: string }> {
+  const driver = ports.store.driver;
+  const iterationId = raw["iteration_id"];
+  if (iterationId !== undefined) {
+    if (typeof iterationId !== "string" || iterationId === "") {
+      return err(
+        "invalid_field_type",
+        "iteration_id は非空の string である必要がある",
+        "iteration_id",
+      );
+    }
+    if (iterationById(driver, iterationId) === undefined) {
+      return ok({ sprints: [], missing: iterationId });
+    }
+    return ok({ sprints: listSprints(driver, { iteration_id: iterationId }) });
+  }
+  if (raw["scope"] !== undefined || raw["component_path"] !== undefined) {
+    const scope = iterationScopeArgs(raw);
+    if (!scope.ok) return scope;
+    const sprints = listIterations(driver, scope.value.scope, scope.value.component_path)
+      .flatMap((iteration) => listSprints(driver, { iteration_id: iteration.iteration_id }))
+      .sort((a, b) => a.issued_seq - b.issued_seq);
+    return ok({ sprints });
+  }
+  return ok({ sprints: listSprints(driver) });
+}
+
+/**
+ * `sprint.repair`。`iteration.repair` と同じ 2 相構成:
+ *
+ * 1. **registry -> DB (adoption)**: `docs/sprints.md` (v1/v2 両対応 parse) の
+ *    entry / head を DB へ adopt する。seq / issued_seq / previous / roster の
+ *    矛盾、未知の iteration は `failures` で fail closed (何も書かない)。
+ * 2. **DB -> fs (再投影)**: `docs/sprints.md` を DB state から canonical render で
+ *    書き直し、member の `> sprint:` binding を expected (effective iteration の
+ *    最新 sprint) へ再投影する。stale binding は audit が拾うまで warning に残す。
+ */
+function repairSprints(kind: string, ports: CliPorts): CliResponse {
+  const warnings: string[] = [];
+  const repositoryId = ports.store.context.repository_id;
+  const driver = ports.store.driver;
+  const document = ports.document;
+  let changed = false;
+  let adopted = { sprints: 0, members: 0, heads: 0 };
+  let registryEntries = 0;
+
+  // --- phase 1: registry -> DB ---
+  const vaultScan = ports.vault_scan;
+  if (vaultScan === undefined) {
+    if (listSprints(driver).length === 0) {
+      warnings.push("vault_scan 未注入 — registry adoption は skip (DB -> fs のみ)");
+    } else {
+      warnings.push("vault_scan 未注入 — registry adoption は skip (DB -> fs のみ)");
+    }
+  } else {
+    const raw = vaultScan.read(SPRINT_REGISTRY_PATH);
+    if (!raw.ok && raw.error.code !== "document_not_found") {
+      return {
+        kind,
+        ok: false,
+        exit_code: CLI_EXIT_NOT_APPLIED,
+        result: {
+          repository_id: repositoryId,
+          disposition: "rejected",
+          failures: [{
+            path: SPRINT_REGISTRY_PATH,
+            reason: `registry が読めない: ${raw.error.message}`,
+          }],
+          warnings,
+        },
+      };
+    }
+    const parsed = parseSprintRegistry(raw.ok ? raw.value : undefined);
+    if (!parsed.ok) {
+      return {
+        kind,
+        ok: false,
+        exit_code: CLI_EXIT_NOT_APPLIED,
+        result: {
+          repository_id: repositoryId,
+          disposition: "rejected",
+          failures: [{ path: SPRINT_REGISTRY_PATH, reason: parsed.error.message }],
+          warnings,
+        },
+      };
+    }
+    registryEntries = parsed.value.entries.length;
+    const adoption = planSprintRegistryAdoption(driver, parsed.value);
+    if (!adoption.ok) {
+      return {
+        kind,
+        ok: false,
+        exit_code: CLI_EXIT_NOT_APPLIED,
+        result: {
+          repository_id: repositoryId,
+          disposition: "rejected",
+          failures: adoption.failures.map((failure) => ({
+            path: SPRINT_REGISTRY_PATH,
+            reason: `${failure.sprint_id}: ${failure.reason}`,
+          })),
+          warnings,
+        },
+      };
+    }
+    warnings.push(...adoption.warnings);
+    const applied = applySprintRegistryPlan(
+      driver,
+      adoption.plan,
+      new Date().toISOString(),
+    );
+    if (!applied.ok) {
+      return {
+        kind,
+        ok: false,
+        exit_code: CLI_EXIT_NOT_APPLIED,
+        result: {
+          repository_id: repositoryId,
+          disposition: "rejected",
+          failures: [{ path: SPRINT_REGISTRY_PATH, reason: applied.error.message }],
+          warnings,
+        },
+      };
+    }
+    adopted = applied.value;
+    changed ||= adopted.sprints + adopted.members + adopted.heads > 0;
+  }
+
+  // --- phase 2: DB -> fs ---
+  if (document.writeSprintRegistry === undefined) {
+    warnings.push("document port に writeSprintRegistry が無い — registry 再投影を skip");
+  } else {
+    const rendered = renderSprintRegistry(
+      repositoryId,
+      sprintHeadsOf(driver),
+      sprintEntriesForRegistry(driver),
+    );
+    const written = document.writeSprintRegistry({ content: rendered });
+    if (!written.ok) {
+      warnings.push(
+        `${SPRINT_REGISTRY_PATH} の再投影が失敗: ${written.error.code}: ${written.error.message}`,
+      );
+    } else if (written.value.changed) {
+      changed = true;
+    }
+  }
+
+  // binding の再投影: member 全員へ expected binding (effective iteration の最新
+  // sprint) を刻む。stale binding は audit の parity 検査へ委ねて warning に残す。
+  let bindingsStamped = 0;
+  let bindingsStale = 0;
+  if (document.stampSprintBinding === undefined) {
+    warnings.push("document port に stampSprintBinding が無い — binding 再投影を skip");
+  } else {
+    const memberIds = new Set<string>();
+    for (const sprint of listSprints(driver)) {
+      for (const member of sprintMembersOf(driver, sprint.sprint_id)) {
+        memberIds.add(member.component_id);
+      }
+    }
+    for (const componentId of [...memberIds].sort()) {
+      const parsed = parseComponentId(componentId, "component_id");
+      if (!parsed.ok) continue;
+      const locator = readDocumentProjection(ports.store, parsed.value)?.document_locator;
+      const path = locator === undefined ? undefined : locator.split("#", 1)[0];
+      if (path === undefined) continue; // 置き場が無いと scope を解けない — binding も書けない
+      const expected = expectedSprintBinding(driver, parsed.value, path);
+      if (expected === undefined) continue;
+      const stamped = document.stampSprintBinding({
+        component_id: parsed.value,
+        sprint_id: expected.sprint_id,
+      });
+      if (!stamped.ok) {
+        warnings.push(
+          `${componentId} の sprint: 再投影が失敗: ${stamped.error.message}`,
+        );
+      } else {
+        bindingsStamped += 1;
+        if (stamped.value.changed) changed = true;
+      }
+    }
+  }
+  // stale binding: DB が知らない sprint を指す / expected と違う刻印。
+  if (vaultScan !== undefined) {
+    for (const path of vaultScan.files()) {
+      const text = vaultScan.read(path);
+      if (!text.ok) continue;
+      for (const binding of scanSprintBindings(text.value)) {
+        const parsed = parseComponentId(binding.component_id, "component_id");
+        if (!parsed.ok) continue;
+        const expected = expectedSprintBinding(driver, parsed.value, path);
+        if (expected !== undefined && expected.sprint_id === binding.sprint_id) continue;
+        if (expected !== undefined && document.stampSprintBinding !== undefined) {
+          // expected が在るなら刻み直して直す (stale ではなく drift)。
+          const restamped = document.stampSprintBinding({
+            component_id: parsed.value,
+            sprint_id: expected.sprint_id,
+          });
+          if (!restamped.ok) {
+            warnings.push(
+              `${path}: ${binding.component_id} の stale binding 修復が失敗: ${restamped.error.message}`,
+            );
+          } else {
+            bindingsStale += 1;
+            if (restamped.value.changed) changed = true;
+          }
+          continue;
+        }
+        bindingsStale += 1;
+        warnings.push(
+          `${path}: ${binding.component_id} の sprint: ${binding.sprint_id} は ` +
+            "DB が期待する binding と一致しない (expected が無い — 消せないので audit が報告する)",
+        );
+      }
+    }
+  }
+
+  return {
+    kind,
+    ok: true,
+    exit_code: CLI_EXIT_OK,
+    result: {
+      repository_id: repositoryId,
+      disposition: changed ? "applied" : "noop",
+      registry_entries: registryEntries,
+      adopted,
+      bindings_stamped: bindingsStamped,
+      bindings_reprojected: bindingsStale,
+      sprints_total: listSprints(driver).length,
+      warnings,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// iteration.init (schema 8)
+// ---------------------------------------------------------------------------
+
+/**
+ * `iteration.init`。予約 root iteration `init` を scope ごとに開き、
+ * `birth_iteration IS NULL` の component と named iteration dir の外の
+ * document を member に畳む migration。`dry_run: true` は何も書かず
+ * 変更予定の一覧だけを返す。
+ */
+function initIterations(
+  kind: string,
+  raw: Record<string, unknown>,
+  ports: CliPorts,
+): CliResponse {
+  const repositoryId = ports.store.context.repository_id;
+  const driver = ports.store.driver;
+  const vaultScan = ports.vault_scan;
+  if (vaultScan === undefined) {
+    return failure(kind, {
+      code: "unsupported_feature",
+      message: "iteration.init には vault_scan port が必要 (component scope の発見)",
+    }, CLI_EXIT_UNAVAILABLE);
+  }
+  const components = driver
+    .prepare(
+      "SELECT component_id, birth_iteration, document_locator FROM components",
+    )
+    .all()
+    .map((row): InitComponentInput => ({
+      component_id: rowString(row, "component_id") ?? "",
+      ...(rowString(row, "birth_iteration") === undefined
+        ? {}
+        : { birth_iteration: rowString(row, "birth_iteration") ?? "" }),
+      ...(rowString(row, "document_locator") === undefined ? {} : {
+        document_path: (rowString(row, "document_locator") ?? "").split("#", 1)[0],
+      }),
+    }));
+  const activeKeys = new Set(
+    driver
+      .prepare("SELECT DISTINCT scope, component_path FROM active_iterations")
+      .all()
+      .map((row) => `${rowString(row, "scope") ?? ""} ${rowString(row, "component_path") ?? ""}`),
+  );
+  const now = new Date().toISOString();
+  const outcome = planIterationInit({
+    iterations: listAllIterations(driver),
+    components,
+    files: vaultScan.files(),
+    active_scope_keys: activeKeys,
+    now,
+    excluded_doc_members: [SPRINT_REGISTRY_PATH],
+  });
+  if (!outcome.ok) {
+    return {
+      kind,
+      ok: false,
+      exit_code: CLI_EXIT_NOT_APPLIED,
+      result: {
+        repository_id: repositoryId,
+        disposition: "rejected",
+        failures: outcome.failures,
+      },
+    };
+  }
+  const plan = outcome.plan;
+  const scopeReports = plan.scopes.map((scope) => ({
+    scope: scope.scope,
+    component_path: scope.component_path,
+    iteration_id: scope.iteration_id,
+    create: scope.create,
+    activate: scope.activate,
+    births: scope.assignments.length,
+    doc_members: scope.doc_members.length,
+    stamp_paths: scope.stamp_paths.length,
+  }));
+  if (raw["dry_run"] === true) {
+    return {
+      kind,
+      ok: true,
+      exit_code: CLI_EXIT_OK,
+      result: {
+        repository_id: repositoryId,
+        dry_run: true,
+        scopes: scopeReports,
+        files_to_stamp: plan.scopes.flatMap((scope) =>
+          scope.stamp_paths.map((path) => ({
+            path,
+            scope: scope.scope,
+            component_path: scope.component_path,
+          }))
+        ),
+      },
+    };
+  }
+  const applied = applyIterationInit(driver, plan, now);
+  // member file へ generated key を刻む — init member は `iteration: 0`。
+  const warnings: string[] = [];
+  for (const scope of plan.scopes) {
+    for (const assignment of scope.assignments) {
+      const component = components.find(
+        (row) => row.component_id === assignment.component_id,
+      );
+      if (component?.document_path === undefined) continue;
+      const parsed = parseComponentId(assignment.component_id, "component_id");
+      if (!parsed.ok) continue;
+      const warning = stampIterationFile(ports, component.document_path, parsed.value).warning;
+      if (warning !== undefined) warnings.push(warning);
+    }
+    for (const path of scope.doc_members) {
+      const warning = stampIterationFile(ports, path).warning;
+      if (warning !== undefined) warnings.push(warning);
+    }
+  }
+  return {
+    kind,
+    ok: true,
+    exit_code: CLI_EXIT_OK,
+    result: {
+      repository_id: repositoryId,
+      disposition: "applied",
+      applied,
+      scopes: scopeReports,
+      warnings,
+    },
+  };
 }

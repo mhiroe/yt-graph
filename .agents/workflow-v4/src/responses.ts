@@ -14,6 +14,7 @@ import {
 } from "./ids.ts";
 import { parseRevision, type Revision } from "./components.ts";
 import { type IterationInfo, type IterationScope, parseIterationScope } from "./iterations.ts";
+import type { SprintInfo } from "./sprints.ts";
 import { parseRelationKey, type RelationKey } from "./relations.ts";
 
 export const DISPOSITIONS = ["applied", "noop", "rejected", "conflict", "not_found"] as const;
@@ -56,6 +57,11 @@ export type CommandResponse = {
    * component の `created_ids` と同じく「採番結果を caller へ返す」役割。
    */
   readonly iteration?: IterationInfo;
+  /**
+   * `sprint.issue` が発行した sprint (schema 8)。
+   * iteration と同じく「Core が採番した結果を caller へ返す」役割。
+   */
+  readonly sprint?: SprintInfo;
   readonly reason?: string;
 };
 
@@ -151,6 +157,99 @@ function parseIterationInfo(value: unknown, path?: string): Result<IterationInfo
   });
 }
 
+const SPRINT_RESPONSE_FIELDS = [
+  "sprint_id",
+  "iteration_id",
+  "scope",
+  "component_path",
+  "label",
+  "seq",
+  "issued_seq",
+  "previous_sprint_id",
+  "goal",
+  "accepted",
+  "baseline_ref",
+  "issued_at",
+] as const;
+
+function parseSprintInfo(value: unknown, path?: string): Result<SprintInfo> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return err("invalid_field_type", "sprint は object である必要がある", path);
+  }
+  const raw = value as Record<string, unknown>;
+  for (const key of Object.keys(raw)) {
+    if (!(SPRINT_RESPONSE_FIELDS as readonly string[]).includes(key)) {
+      return err(
+        "unexpected_field",
+        `sprint に未知の field がある: ${key}`,
+        joinPath(path, key),
+      );
+    }
+  }
+  const required = (field: string): Result<string> => {
+    const v = raw[field];
+    return typeof v === "string" && v.length > 0 ? ok(v) : err(
+      "invalid_field_type",
+      `${field} は空でない string である必要がある`,
+      joinPath(path, field),
+    );
+  };
+  const sprintId = required("sprint_id");
+  if (!sprintId.ok) return sprintId;
+  const iterationId = required("iteration_id");
+  if (!iterationId.ok) return iterationId;
+  const scope = parseIterationScope(raw["scope"], joinPath(path, "scope"));
+  if (!scope.ok) return scope;
+  const componentPath = raw["component_path"];
+  if (typeof componentPath !== "string") {
+    return err(
+      "invalid_field_type",
+      "component_path は string である必要がある",
+      joinPath(path, "component_path"),
+    );
+  }
+  const label = required("label");
+  if (!label.ok) return label;
+  const integer = (field: string, min: number): Result<number> => {
+    const v = raw[field];
+    return typeof v === "number" && Number.isInteger(v) && v >= min ? ok(v) : err(
+      "invalid_field_type",
+      `${field} は ${min} 以上の整数である必要がある`,
+      joinPath(path, field),
+    );
+  };
+  const seq = integer("seq", 1);
+  if (!seq.ok) return seq;
+  const issuedSeq = integer("issued_seq", 1);
+  if (!issuedSeq.ok) return issuedSeq;
+  const goal = required("goal");
+  if (!goal.ok) return goal;
+  const accepted = required("accepted");
+  if (!accepted.ok) return accepted;
+  const issuedAt = required("issued_at");
+  if (!issuedAt.ok) return issuedAt;
+  const optional = (field: string): string | undefined => {
+    const v = raw[field];
+    return typeof v === "string" && v.length > 0 ? v : undefined;
+  };
+  const previous = optional("previous_sprint_id");
+  const baseline = optional("baseline_ref");
+  return ok({
+    sprint_id: sprintId.value,
+    iteration_id: iterationId.value,
+    scope: scope.value as IterationScope,
+    component_path: componentPath,
+    label: label.value,
+    seq: seq.value,
+    issued_seq: issuedSeq.value,
+    ...(previous === undefined ? {} : { previous_sprint_id: previous }),
+    goal: goal.value,
+    accepted: accepted.value,
+    ...(baseline === undefined ? {} : { baseline_ref: baseline }),
+    issued_at: issuedAt.value,
+  });
+}
+
 const RESPONSE_FIELDS = [
   "operation_id",
   "repository_id",
@@ -160,6 +259,7 @@ const RESPONSE_FIELDS = [
   "created_ids",
   "removed_relations",
   "iteration",
+  "sprint",
   "reason",
 ] as const;
 
@@ -229,6 +329,13 @@ export function parseCommandResponse(value: unknown): Result<CommandResponse> {
     iteration = parsed.value;
   }
 
+  let sprint: SprintInfo | undefined;
+  if (raw["sprint"] !== undefined && raw["sprint"] !== null) {
+    const parsed = parseSprintInfo(raw["sprint"], "sprint");
+    if (!parsed.ok) return parsed;
+    sprint = parsed.value;
+  }
+
   const reasonRaw = raw["reason"];
   if (reasonRaw !== undefined && reasonRaw !== null && typeof reasonRaw !== "string") {
     return err("invalid_field_type", "reason は string である必要がある", "reason");
@@ -262,6 +369,7 @@ export function parseCommandResponse(value: unknown): Result<CommandResponse> {
       ? {}
       : { removed_relations: removedRelations }),
     ...(iteration === undefined ? {} : { iteration }),
+    ...(sprint === undefined ? {} : { sprint }),
     ...(reason === undefined ? {} : { reason }),
   });
 }

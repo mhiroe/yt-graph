@@ -16,6 +16,7 @@ import {
 } from "./ids.ts";
 import { parseRevision, type Revision, TASK_STATUSES, WISH_STATUSES } from "./components.ts";
 import { parseIterationScope } from "./iterations.ts";
+import type { SprintRosterEntry } from "./sprints.ts";
 import { parseRelationType } from "./relations.ts";
 import { parseComponentKind } from "./components.ts";
 import {
@@ -71,6 +72,9 @@ export const OPERATION_NAMES = [
   "iteration.switch",
   "iteration.carry",
   "iteration.dispose",
+  // sprint (schema 8、docs/candidate/workflow-v4/sprints.md)。iteration と同じく
+  // component aggregate に乗らず、domain_events も出さない。
+  "sprint.issue",
 ] as const;
 export type OperationName = (typeof OPERATION_NAMES)[number];
 
@@ -97,7 +101,9 @@ type FieldKind =
   | "operation_id"
   | "object"
   | "iteration_scope"
-  | "string_array";
+  | "string_array"
+  | "boolean"
+  | "sprint_roster";
 
 type FieldSpec = {
   readonly name: string;
@@ -440,6 +446,34 @@ export const OPERATION_SPECS: Readonly<Record<OperationName, OperationSpec>> = {
     expected_revision: "forbidden",
     fields: [f("iteration_id", true, "string")],
   },
+  /**
+   * sprint を 1 件発行する (schema 8、docs/candidate/workflow-v4/sprints.md)。
+   *
+   * **component aggregate ではないので `target_id` / `expected_revision` を持たない。**
+   * Sprint は immutable — 後の差分は次の issue が担い、発行後の row / roster は変わらない。
+   *
+   * - `iteration_id`: 所属 iteration (required)。seq / label はここから採番する。
+   * - `expected_head`: 発行時に見た head の sprint_id。省略は「head 無しを期待」—
+   *   別 sprint が先に head へ立っていれば conflict。
+   * - `roster`: `[{component_id, expected_revision}]`。member はその iteration の
+   *   member (birth or carry) の非終端 wish / mind に限る — decide が検査する。
+   * - `dry_run`: true なら計画だけを返して DB / file に何も書かない (ledger にも
+   *   残らない — dispatch が runLocalCommand より前で intercept する)。
+   */
+  "sprint.issue": {
+    operation: "sprint.issue",
+    target_id: "forbidden",
+    expected_revision: "forbidden",
+    fields: [
+      f("iteration_id", true, "string"),
+      f("goal", true, "string"),
+      f("accepted", true, "string"),
+      f("baseline_ref", false, "string"),
+      f("expected_head", false, "string"),
+      f("roster", true, "sprint_roster"),
+      f("dry_run", false, "boolean"),
+    ],
+  },
 };
 
 export type CommandPayload = Readonly<Record<string, unknown>>;
@@ -685,7 +719,62 @@ function parseField(kind: FieldKind, value: unknown, path: string): Result<unkno
       return typeof value === "object" && value !== null && !Array.isArray(value)
         ? ok(value)
         : err("invalid_field_type", `${path} は object である必要がある`, path);
+    case "boolean":
+      return typeof value === "boolean"
+        ? ok(value)
+        : err("invalid_field_type", `${path} は boolean である必要がある`, path);
+    case "sprint_roster":
+      return parseSprintRoster(value, path);
   }
+}
+
+/**
+ * `[{component_id, expected_revision}]` の roster。member 単位の同時実行検査 —
+ * 「この revision を見て roster に入れた」を残さないと、bind までに state が
+ * 動いても検出できない。空 roster も合法 (head だけ進める issue)。
+ * skill_entry の `sprint.issue` seam も同じ parse を使う。
+ */
+export function parseSprintRoster(
+  value: unknown,
+  path: string,
+): Result<readonly SprintRosterEntry[]> {
+  if (!Array.isArray(value)) {
+    return err("invalid_field_type", `${path} は array である必要がある`, path);
+  }
+  const parsed: SprintRosterEntry[] = [];
+  const seen = new Set<ComponentId>();
+  for (const [index, item] of value.entries()) {
+    const itemPath = joinPath(path, String(index));
+    if (typeof item !== "object" || item === null || Array.isArray(item)) {
+      return err("invalid_field_type", `${itemPath} は object である必要がある`, itemPath);
+    }
+    const record = item as Record<string, unknown>;
+    for (const key of Object.keys(record)) {
+      if (key !== "component_id" && key !== "expected_revision") {
+        return err("unexpected_field", `${itemPath} に未知の field がある: ${key}`, itemPath);
+      }
+    }
+    const componentId = parseComponentId(
+      record["component_id"],
+      joinPath(itemPath, "component_id"),
+    );
+    if (!componentId.ok) return componentId;
+    if (seen.has(componentId.value)) {
+      return err(
+        "invalid_field_type",
+        `roster に component ${componentId.value} が重複している`,
+        itemPath,
+      );
+    }
+    seen.add(componentId.value);
+    const revision = parseRevision(
+      record["expected_revision"],
+      joinPath(itemPath, "expected_revision"),
+    );
+    if (!revision.ok) return revision;
+    parsed.push({ component_id: componentId.value, expected_revision: revision.value });
+  }
+  return ok(parsed);
 }
 
 type StatusTransitionSpec =

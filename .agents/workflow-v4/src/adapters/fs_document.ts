@@ -43,8 +43,11 @@ import {
   type RenameTitleInput,
   type ReplaceRegionInput,
   type StampIterationPropertiesInput,
+  type StampSprintBindingInput,
+  type WriteSprintRegistryInput,
 } from "../document.ts";
 import { applyIterationProperties } from "../iterations.ts";
+import { applySprintBinding, SPRINT_REGISTRY_PATH } from "../sprints.ts";
 import {
   applyAttachChild,
   applyCreateTask,
@@ -400,6 +403,47 @@ export function createFsDocumentPort(options: FsDocumentPortOptions): DocumentPo
       if (!stamped.ok) return stamped;
       if (stamped.value.changed) writeAtomic(target.value, stamped.value.raw);
       return ok({ changed: stamped.value.changed });
+    },
+
+    stampSprintBinding(
+      input: StampSprintBindingInput,
+    ): Result<{ readonly changed: boolean }> {
+      // stamp 対象は component の node — locator 経路で file を引き、callout の
+      // upsert は `^<id>` anchor を探す `applySprintBinding` が担う。
+      const locator = locatorOf(input.component_id);
+      if (!locator.ok) return locator;
+      const file = readFile(locator.value);
+      if (!file.ok) return file;
+      const stamped = applySprintBinding(
+        file.value.raw,
+        input.component_id,
+        input.sprint_id,
+      );
+      if (!stamped.ok) return stamped;
+      if (stamped.value.changed) writeAtomic(file.value.path, stamped.value.raw);
+      return ok({ changed: stamped.value.changed });
+    },
+
+    writeSprintRegistry(
+      input: WriteSprintRegistryInput,
+    ): Result<{ readonly changed: boolean }> {
+      const relative = input.path ?? SPRINT_REGISTRY_PATH;
+      const checked = checkRelativePath(relative, "path");
+      if (!checked.ok) return checked;
+      if (!checked.value.endsWith(".md")) {
+        return err(
+          "invalid_locator",
+          `writeSprintRegistry は .md file にだけ書く: ${relative}`,
+          "path",
+        );
+      }
+      const target = resolveInsideRoot(options.root, checked.value);
+      if (!target.ok) return target;
+      const previous = existsSync(target.value) ? readFileSync(target.value, "utf8") : undefined;
+      if (previous === input.content) return ok({ changed: false });
+      mkdirSync(dirname(target.value), { recursive: true });
+      writeAtomic(target.value, input.content);
+      return ok({ changed: true });
     },
   };
 }
