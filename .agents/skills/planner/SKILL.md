@@ -220,6 +220,10 @@ Before presenting the readiness decision, confirm the wish document carries
   (intake) and a gm-judgment question to `gm`.
 - The wish's **cross-wish dependencies and triggers** — what it blocks, what
   blocks it, and any pre-authorized wake path.
+- The plan's final step is a **user deploy decision** — after the build
+  legs, an explicit turn asks the user whether to install/operationalize
+  the result (user ruling 2026-10-10: build-then-shelve is a known failure
+  mode; deploy-or-shelve is the user's call, never implicit).
 - The **related-set impact** — for every member of the recorded related set,
   one line stating what this plan does to it: relation lines added, tasks
   moved/minted, a split applied, a merge/drop proposal pending the user
@@ -250,7 +254,9 @@ then present readiness.
   run still completes with `docs_only` open — proceed to the document work.
 - Planner ends by presenting the readiness decision to the user. It does not
   mark the wish `ready` itself; `doit` requires the user's explicit readiness
-  decision first. To park a wish, the user instruction goes through
+  decision first — an explicit GO taken AFTER the plan is complete (user
+  ruling 2026-10-10). An earlier approval (proposal acceptance, mint GO)
+  does not carry forward as readiness. To park a wish, the user instruction goes through
   `wish.transition` with `wish.set_pending` + a verbatim `reason`.
 - Dropping a task (dedupe / superseded / cancelled) is doc-first: set the
   node's marker to `[dropped]` in the owning doc, then run

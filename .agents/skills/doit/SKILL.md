@@ -12,6 +12,9 @@ Execute exactly one workflow v4 task against the vendored Core runtime at
 
 - The wish was planned by `planner` and the **user** gave the readiness
   decision. Do not start `doit` on a wish the planner only proposed.
+- The readiness GO must be taken AFTER the plan is complete (user ruling
+  2026-10-10) — an earlier approval (proposal acceptance, mint GO) does
+  not count as readiness.
 - The repository is provisioned: `.workflow/repository.json` exists. If it does
   not, run `.agents/workflow-v4/wf4.sh provision <repository-id>` once.
 
@@ -52,13 +55,17 @@ waiver).
 Existing planned task:
 
 ```json
-{"kind":"skill.phase","phase":"doit","wish":{"component_id":"w-...","state_revision":0},"task":{"component_id":"t-...","state_revision":0},"operation_prefix":"impl-"}
+{"kind":"skill.phase","phase":"doit","wish":{"component_id":"w-...","state_revision":0},"task":{"component_id":"t-...","state_revision":0},"operation_prefix":"impl-<task-suffix>-"}
 ```
+
+`operation_prefix` must be task-unique — embed the task id suffix
+(`impl-haaac2-`). Operation ids are `${prefix}-${seq}` in a repo-global
+journal, so retries of different tasks collide on a shared prefix.
 
 Or let the runtime create the planned task from the wish:
 
 ```json
-{"kind":"skill.phase","phase":"doit","wish":{"component_id":"w-...","state_revision":0},"task_title":"...","operation_prefix":"impl-"}
+{"kind":"skill.phase","phase":"doit","wish":{"component_id":"w-...","state_revision":0},"task_title":"...","operation_prefix":"impl-<task-suffix>-"}
 ```
 
 With iteration layout, `task_locator` points inside the owning wish's
@@ -70,7 +77,7 @@ or the task must join a non-default active iteration. Resolve it via
 `iteration.list` — never guess.
 
 ```json
-{"kind":"skill.phase","phase":"doit","wish":{"component_id":"w-...","state_revision":0},"task_title":"...","task_locator":"<component>/<it>/docs/wish_<component>.md#heading","task_iteration_id":"it-...","operation_prefix":"impl-"}
+{"kind":"skill.phase","phase":"doit","wish":{"component_id":"w-...","state_revision":0},"task_title":"...","task_locator":"<component>/<it>/docs/wish_<component>.md#heading","task_iteration_id":"it-...","operation_prefix":"impl-<task-suffix>-"}
 ```
 
 ## Session record
@@ -85,7 +92,7 @@ Outside herdr (or when the auto-attach resolves to the wrong pane — e.g. a
 delegated run), pass `session` explicitly and it is used instead:
 
 ```json
-{"kind":"skill.phase","phase":"doit","wish":{...},"task":{...},"session":{"pane":"w16:p1H","agent":"devin","session_id":"..."},"operation_prefix":"impl-"}
+{"kind":"skill.phase","phase":"doit","wish":{...},"task":{...},"session":{"pane":"w16:p1H","agent":"devin","session_id":"..."},"operation_prefix":"impl-<task-suffix>-"}
 ```
 
 All subfields are optional; send what you can resolve.

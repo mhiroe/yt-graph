@@ -11,7 +11,7 @@ Core at `.agents/workflow-v4/`.
 ## Request
 
 ```json
-{"kind":"skill.phase","phase":"done","task":{"component_id":"t-...","state_revision":0},"verification":"<what was run and observed>","operation_prefix":"fin-"}
+{"kind":"skill.phase","phase":"done","task":{"component_id":"t-...","state_revision":0},"verification":"<what was run and observed>","operation_prefix":"fin-<task-suffix>-"}
 ```
 
 Resolve `component_id` from the `doit` handoff or `.agents/workflow-v4/wf4.sh
@@ -31,8 +31,10 @@ read ops), and send the request with that value.
 
 If `task.complete` still returns `conflict` or `rejected`, retry once — never
 more: re-run `wf4.sh revision` and resend the same request with the fresh
-revision and a new `operation_prefix` (e.g. `fin-r1-`; operation ids are
-`${prefix}-${seq}` and must not repeat). A `noop` on the last command means
+revision and a new `operation_prefix` (e.g. `fin-<task-suffix>-r1-`;
+operation ids are `${prefix}-${seq}`, the journal is repo-global, and they
+must not repeat — embed the task suffix so retries of different tasks never
+collide). A `noop` on the last command means
 the task already holds `done` — the run reports completed and is not a
 failure. Halt on the first non-`applied` disposition otherwise.
 
@@ -115,7 +117,7 @@ makes and instructs explicitly. When — and only when — the user asks to clos
 wish, send:
 
 ```json
-{"kind":"wish.complete","wish":{"component_id":"w-...","state_revision":0},"reason":"<the user's own reason>","operation_prefix":"close-"}
+{"kind":"wish.complete","wish":{"component_id":"w-...","state_revision":0},"reason":"<the user's own reason>","operation_prefix":"close-<wish-suffix>-"}
 ```
 
 The runtime rejects an empty or missing `reason`; carry the user's own words,
@@ -126,7 +128,7 @@ or `pending` moves one transition per `wish.transition` request, each carrying
 the user's verbatim `reason`:
 
 ```json
-{"kind":"wish.transition","wish":{"component_id":"w-...","state_revision":0},"operation":"wish.drop","reason":"<the user's own reason>","operation_prefix":"close-"}
+{"kind":"wish.transition","wish":{"component_id":"w-...","state_revision":0},"operation":"wish.drop","reason":"<the user's own reason>","operation_prefix":"close-<wish-suffix>-"}
 ```
 
 Allowed `operation` values: `wish.request_ready`, `wish.set_pending`,
