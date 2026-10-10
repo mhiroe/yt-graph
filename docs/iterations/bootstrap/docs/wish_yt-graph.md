@@ -7,9 +7,9 @@ children: []
 tags:
   - wish
   - yt-graph
-iteration: 1
-iteration_label: bootstrap
-iteration_created: 2026-09-27T12:49:44.864Z
+iteration: 0
+iteration_label: init
+iteration_created: 2026-10-10T16:36:39.578Z
 ---
 
 # yt-graph PoC: seed から育てる YouTube channel discovery graph
