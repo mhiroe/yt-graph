@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createChannelFeed } from "../src/seams/channelFeed";
-import { DokoitsuPointsGate, HttpPointsGate } from "../src/seams/pointsGate";
+import { DocoitsuPointsGate, HttpPointsGate } from "../src/seams/pointsGate";
 import {
   bindEmbedControl,
   ContentHubWebviewSurface,
@@ -168,7 +168,7 @@ try {
 const clock = new ManualClock(Date.parse("2026-10-08T12:00:00"));
 const lock = new ParentalLock(new MemoryStore(), clock.now);
 const rhythm = new ViewingRhythm({ watchMs: 5_000, restMs: 3_000 }, clock.now);
-const gate = new DokoitsuPointsGate(new MemoryStore(), clock.now);
+const gate = new DocoitsuPointsGate(new MemoryStore(), clock.now);
 const calls: string[] = [];
 const fakeIframe = { style: { pointerEvents: "" } } as unknown as HTMLIFrameElement;
 const ctl = bindEmbedControl(fakeIframe, (): EmbedPlayer => ({
@@ -229,7 +229,7 @@ for (let i = 0; i < 10 && watching; i++) {
 check("cap trip takes the unmount path (no fake pause)", capTrip, `calls=${calls.join(",")}`);
 
 // Points-empty blocks the play gate outright.
-const emptyGate = new DokoitsuPointsGate(new MemoryStore(), clock.now);
+const emptyGate = new DocoitsuPointsGate(new MemoryStore(), clock.now);
 emptyGate.spend(30 * 60_000);
 check("points budget exhaustion blocks play", emptyGate.remainingMs() === 0);
 
@@ -237,7 +237,7 @@ check("points budget exhaustion blocks play", emptyGate.remainingMs() === 0);
 const deadHttp = new HttpPointsGate("http://127.0.0.1:59998");
 const deadA = await deadHttp.allowance();
 check(
-  "dead dokoitsu degrades to shadow ledger",
+  "dead docoitsu degrades to shadow ledger",
   deadA.connected === false && deadHttp.remainingMs() > 0,
   `connected=${deadA.connected} policy=${deadA.policy}`,
 );

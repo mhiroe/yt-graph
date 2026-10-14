@@ -87,11 +87,11 @@ grow a navigable graph of similar / interesting channels.
   (`yt.channels.get`) and fronts the window (`host.show`). Env:
   `PLAYBACK_CONTENTHUB_ROOT` / `PLAYBACK_CONTENTHUB_TIMEOUT_MS`. With no live
   ContentHub instance the surface honestly degrades to the embed floor.
-  Points gate: `VITE_PLAYBACK_DOKOITSU_URL` (default `http://127.0.0.1:8787`)
-  targets the dokoitsu `/parental` contract — from this client :8787 is
-  dokoitsu's; the yt-graph API also defaults there, so when both run move
+  Points gate: `VITE_PLAYBACK_DOCOITSU_URL` (default `http://127.0.0.1:8787`)
+  targets the docoitsu `/parental` contract — from this client :8787 is
+  docoitsu's; the yt-graph API also defaults there, so when both run move
   yt-graph via `YTG_API_PORT`. `VITE_PLAYBACK_POINTS=local` forces the
-  offline shadow ledger; `auto` degrades to it when dokoitsu is absent.
+  offline shadow ledger; `auto` degrades to it when docoitsu is absent.
   `pnpm accept` (playback pkg) is the standalone kk e2e — served drop vs core
   export, surface probe + open, live embed resolution, and the
   limit/lock/points/rhythm enforcement path replayed seam-level (scratch
@@ -120,7 +120,7 @@ grow a navigable graph of similar / interesting channels.
   (`YTG_JUDGE=auto|jev|heuristic|staged`; `staged` runs the Tier0-3 funnel,
   upper tiers escalate only while inconclusive and are port-wired only)
 - curiosity profile seam: `YTG_PROFILE=auto|fixture|off` (auto = fail-soft
-  absent profile until a real dokoitsu source lands; fixture = canned
+  absent profile until a real docoitsu source lands; fixture = canned
   profile for dev/checks)
 - `pnpm seed:import [listPath]` — load a hand-curated channel list
   (`- <title> | UC…` lines, default `.agent-state/anime-channels-2026-09-29.md`)

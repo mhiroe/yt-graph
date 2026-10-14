@@ -73,7 +73,7 @@ export function App() {
       feed: import.meta.env.VITE_PLAYBACK_FEED,
       exportUrl: import.meta.env.VITE_PLAYBACK_EXPORT_URL,
       points: import.meta.env.VITE_PLAYBACK_POINTS,
-      dokoitsuUrl: import.meta.env.VITE_PLAYBACK_DOKOITSU_URL,
+      docoitsuUrl: import.meta.env.VITE_PLAYBACK_DOCOITSU_URL,
     }).then(async (s) => {
       setSeams(s);
       const f = await s.feed.listChannels();

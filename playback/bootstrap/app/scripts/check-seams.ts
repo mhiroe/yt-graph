@@ -9,7 +9,7 @@ import {
 } from "../src/seams/channelFeed";
 import {
   createPointsGate,
-  DokoitsuPointsGate,
+  DocoitsuPointsGate,
   HttpPointsGate,
   UNCONNECTED_DEFAULT,
 } from "../src/seams/pointsGate";
@@ -71,7 +71,7 @@ if (gate.remainingMs() !== 60_000) {
 }
 gate.spend(60_000);
 if (gate.remainingMs() !== 0) throw new Error("gate not empty at cap");
-const spent = new DokoitsuPointsGate(gstore, gclock.now);
+const spent = new DocoitsuPointsGate(gstore, gclock.now);
 if (spent.remainingMs() !== 0) throw new Error("gate spend not persisted");
 gclock.advance(24 * 3600_000);
 if (gate.remainingMs() !== UNCONNECTED_DEFAULT.capMinutes * 60_000) {
@@ -79,12 +79,12 @@ if (gate.remainingMs() !== UNCONNECTED_DEFAULT.capMinutes * 60_000) {
 }
 console.log(`gate: ${allowance.policy} cap=${allowance.remainingMinutes}min, spend enforced`);
 
-// HttpPointsGate — the live dokoitsu /parental contract behind injected
+// HttpPointsGate — the live docoitsu /parental contract behind injected
 // fetch. allowance maps {connected,policy,remainingMinutes,note}; spend
 // flushes {ms: DELTA, id}; retry reuses the same id (server dedupe).
 const posts: { url: string; body: { ms?: number; id?: string } }[] = [];
-const liveGate = new HttpPointsGate("http://dokoitsu.test", {
-  shadow: new DokoitsuPointsGate(new MemoryStore(), gclock.now),
+const liveGate = new HttpPointsGate("http://docoitsu.test", {
+  shadow: new DocoitsuPointsGate(new MemoryStore(), gclock.now),
   fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
     const u = String(url);
     if (u.endsWith("/parental/allowance")) {
@@ -130,8 +130,8 @@ if (liveGate.remainingMs() !== 12.5 * 60_000 - 15_000) {
 // Failed flush keeps the same pending id — the retry is a dedupe-safe replay.
 let failOnce = true;
 const replayPosts: { ms?: number; id?: string }[] = [];
-const replayGate = new HttpPointsGate("http://dokoitsu.test", {
-  shadow: new DokoitsuPointsGate(new MemoryStore(), gclock.now),
+const replayGate = new HttpPointsGate("http://docoitsu.test", {
+  shadow: new DocoitsuPointsGate(new MemoryStore(), gclock.now),
   fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
     if (String(url).endsWith("/parental/spend")) {
       replayPosts.push(JSON.parse(String(init?.body ?? "{}")));
@@ -155,7 +155,7 @@ if (replayPosts.length !== 2 || replayPosts[0].id !== replayPosts[1].id || repla
   throw new Error(`retry did not replay the same spend id: ${JSON.stringify(replayPosts)}`);
 }
 // Break / unmetered shapes: remainingMinutes 0 blocks, null is unmetered.
-const breakGate = new HttpPointsGate("http://dokoitsu.test", {
+const breakGate = new HttpPointsGate("http://docoitsu.test", {
   fetchImpl: (async () =>
     new Response(
       JSON.stringify({
@@ -171,7 +171,7 @@ const breakA = await breakGate.allowance();
 if (breakA.remainingMinutes !== 0 || breakGate.remainingMs() !== 0) {
   throw new Error("enforced break did not zero the budget");
 }
-const freeGate = new HttpPointsGate("http://dokoitsu.test", {
+const freeGate = new HttpPointsGate("http://docoitsu.test", {
   fetchImpl: (async () =>
     new Response(
       JSON.stringify({ connected: true, remainingMinutes: null, policy: "v1", note: "制限なし" }),
@@ -184,7 +184,7 @@ if (freeGate.remainingMs() !== Number.POSITIVE_INFINITY) {
 }
 // Dead server -> honest shadow fallback (connected:false, shadow cap applies).
 const deadGate = new HttpPointsGate("http://127.0.0.1:9", {
-  shadow: new DokoitsuPointsGate(new MemoryStore(), gclock.now),
+  shadow: new DocoitsuPointsGate(new MemoryStore(), gclock.now),
   fetchImpl: (async () => {
     throw new Error("unreachable");
   }) as typeof fetch,

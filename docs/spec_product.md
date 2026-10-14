@@ -70,7 +70,7 @@ iteration_created: 2026-10-10T16:36:39.578Z
       (親ロック)。学習ポイント制 — 獲得ポイントに応じて見られる
       長さ / 量を制御する。視聴リズムとして 30 分ごとに 10 分の休憩を
       入れる。基本機能として登録 channel の視聴も可。
-      partner (dokoitsu) との連携を構想 (ポイント・学習管理側)。
+      partner (docoitsu) との連携を構想 (ポイント・学習管理側)。
       再生面の browser は **ul-browser** 優先 (使えたら; user
       2026-09-29)。コンテンツ側の希望: tvtokyo 系などのアニメ
       channel 一覧 (starter set は
@@ -114,7 +114,7 @@ iteration_created: 2026-10-10T16:36:39.578Z
   - jev (local judgment CLI)
   - AdGuard (ad blocking; 利用環境側)
   - yt-client / ContentHub webview host (別 repo 依存)
-  - dokoitsu (個人 concierge agent; Curiosity Profile の将来 source —
+  - docoitsu (個人 concierge agent; Curiosity Profile の将来 source —
     未実装、adapter seam で接続)
 - ContentHub file transport の wire form (user directive 2026-09-30、
   contenthub_pm 経由 — yt2doc で live 検証済み):
@@ -140,8 +140,8 @@ note: `docs/chatgpt/YouTube発見方法比較.md` — gitignored)。
   Style)。フィルターではなく探索の出発点として使い、profile からの
   距離を変える distance knob を持つ。accept/reject 履歴と channel ごと
   の「ここが好き」一言で学習させる構想。X 探索等との共通化も視野。
-  実データの供給元は **dokoitsu** (個人 concierge agent、ユーザーの
-  情報を蓄積する側) を想定 — dokoitsu 側は未実装なので、yt-graph は
+  実データの供給元は **docoitsu** (個人 concierge agent、ユーザーの
+  情報を蓄積する側) を想定 — docoitsu 側は未実装なので、yt-graph は
   profile source を adapter seam として用意し pipe を意識する
   (user 指示 2026-09-29)。
 - candidate 発見は keyword search 中心にしない。入口だけ検索し、
@@ -197,11 +197,11 @@ note: `docs/chatgpt/YouTube発見方法比較.md` — gitignored)。
   strategy"); 複数 viewer 共有の gap channel が最強 signal。
 - Channel Activity DNA の schema、transcript と VLM の切り分け基準。
 - Curiosity Profile: 明示入力か accept/reject 履歴からの学習か、
-  dokoitsu 蓄積データからの供給か (user 2026-09-29: dokoitsu pipe を
-  意識する方針。dokoitsu 側は未実装)。
+  docoitsu 蓄積データからの供給か (user 2026-09-29: docoitsu pipe を
+  意識する方針。docoitsu 側は未実装)。
 - cold-start: seed 1 本からの candidate 展開方法。
 - interestingness の定義と jev criteria。
 - graph 表現 (2D/3D、edge semantics)、preview の中身。
 - yt-client / ContentHub 連携の API 契約。
 - 再生 client の詳細 (視聴 limit / 親ロック / 学習ポイントの仕様、
-  dokoitsu との連携契約) — client 側 repo が立つ時に詰める。
+  docoitsu との連携契約) — client 側 repo が立つ時に詰める。

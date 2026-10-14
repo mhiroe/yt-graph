@@ -14,7 +14,7 @@ console.log(`fit(fermentation,science)=${profileFit(prof, ["fermentation", "scie
 console.log(`fit(vlog,crypto)=${profileFit(prof, ["vlog", "crypto"]).toFixed(2)}`);
 console.log(`fit(no topics)=${profileFit(prof, [])} neutral=${PROFILE_FIT_NEUTRAL}`);
 try {
-  createProfileAdapter("dokoitsu");
+  createProfileAdapter("docoitsu");
 } catch (e) {
-  console.log(`dokoitsu -> ${(e as Error).message}`);
+  console.log(`docoitsu -> ${(e as Error).message}`);
 }

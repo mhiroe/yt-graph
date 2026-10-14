@@ -17,12 +17,12 @@ export async function resolveSeams(env: {
   feed?: string;
   exportUrl?: string;
   points?: string;
-  dokoitsuUrl?: string;
+  docoitsuUrl?: string;
 } = {}): Promise<Seams> {
   return {
     feed: createChannelFeed(env.feed, { exportUrl: env.exportUrl }),
     pointsGate: createPointsGate(env.points, undefined, undefined, {
-      baseUrl: env.dokoitsuUrl,
+      baseUrl: env.docoitsuUrl,
     }),
     surface: await selectSurface(),
   };

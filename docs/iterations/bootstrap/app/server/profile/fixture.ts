@@ -16,7 +16,7 @@ const FIXTURE_PROFILE: CuriosityProfile = {
 /**
  * Canned profile for fixture runs and tests — same domain as
  * sources/fixture, so the DNA-vs-profile fit path is exercisable without a
- * real dokoitsu supply.
+ * real docoitsu supply.
  */
 export class FixtureProfile implements ProfileAdapter {
   readonly name = "fixture";

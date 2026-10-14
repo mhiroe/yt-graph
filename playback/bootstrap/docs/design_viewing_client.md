@@ -73,7 +73,7 @@ landed seams.
 
 ## Limits overlay — 3 strengths, renders state only
 
-Dokoitsu (via `pointsGate.allowance`/`remainingMs`) and the local rhythm are
+Docoitsu (via `pointsGate.allowance`/`remainingMs`) and the local rhythm are
 the policy authorities; the UI only draws what they say.
 
 1. **Badge (L0, ambient)** — `⏱ NN min` pill, corner of both screens; tints

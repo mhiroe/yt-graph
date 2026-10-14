@@ -1,5 +1,5 @@
 // Curiosity-profile adapter types. The profile is the viewer's interest
-// signature, supplied from outside this repo (dokoitsu planned). Consumers —
+// signature, supplied from outside this repo (docoitsu planned). Consumers —
 // the cheap judgment tiers — talk only to this seam.
 
 /** One weighted interest axis of the viewer profile. */

@@ -4,9 +4,9 @@ import { FixtureProfile } from "./fixture.js";
 
 /**
  * Profile selection seam: YTG_PROFILE=auto | fixture | off (default auto).
- * The real source is dokoitsu — not implemented yet, so `auto` falls back to
+ * The real source is docoitsu — not implemented yet, so `auto` falls back to
  * the fail-soft NullProfile (absent profile -> neutral consumers). When a
- * dokoitsu adapter lands it registers here and `auto` probes it first.
+ * docoitsu adapter lands it registers here and `auto` probes it first.
  */
 export function createProfileAdapter(name = process.env.YTG_PROFILE ?? "auto"): ProfileAdapter {
   switch (name) {

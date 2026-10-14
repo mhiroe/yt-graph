@@ -174,8 +174,8 @@ constitution: none (repo autonomy)
 
 - viewer の Curiosity Profile は `server/profile/` の `ProfileAdapter`
   interface 越しのみ。選択は `YTG_PROFILE` env (`auto` 既定 / `fixture` /
-  `off`)。供給元は dokoitsu 想定だが未実装 — `auto` は fail-soft の
-  NullProfile に落ち、将来の dokoitsu adapter はこの seam に登録する
+  `off`)。供給元は docoitsu 想定だが未実装 — `auto` は fail-soft の
+  NullProfile に落ち、将来の docoitsu adapter はこの seam に登録する
   (2026-10-03, t-01M3RZVV3E)。
 - profile 不在は `null` で表し、consumer は neutral として扱う — エラー
   ではない。neutral の値 (`PROFILE_FIT_NEUTRAL`) と DNA-vs-profile fit

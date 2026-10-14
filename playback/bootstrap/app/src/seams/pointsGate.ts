@@ -1,5 +1,5 @@
 // Learning-points gate seam — viewing budget is granted by study points,
-// whose source is the partner side (dokoitsu). Dokoitsu is unimplemented,
+// whose source is the partner side (docoitsu). Docoitsu is unimplemented,
 // so the seam keeps a local shadow ledger under a fail-soft default
 // policy while unconnected — playback is capped, not unmetered and not
 // hard-blocked. When the pipe lands, `spend`/`allowance` proxy to it and
@@ -40,8 +40,8 @@ function dayKey(now: number): string {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
 
-export class DokoitsuPointsGate implements PointsGateAdapter {
-  readonly name = "dokoitsu";
+export class DocoitsuPointsGate implements PointsGateAdapter {
+  readonly name = "docoitsu";
   private state: Persisted;
 
   constructor(
@@ -57,7 +57,7 @@ export class DokoitsuPointsGate implements PointsGateAdapter {
       connected: false,
       remainingMinutes: Math.ceil(this.remainingMs() / 60_000),
       policy: UNCONNECTED_DEFAULT.policy,
-      note: "dokoitsu points pipe not connected",
+      note: "docoitsu points pipe not connected",
     };
   }
 
@@ -73,17 +73,17 @@ export class DokoitsuPointsGate implements PointsGateAdapter {
   }
 }
 
-// dokoitsu owns :8787 from this client's view (the yt-graph API also
+// docoitsu owns :8787 from this client's view (the yt-graph API also
 // defaults there — when both run, yt-graph moves via YTG_API_PORT).
-export const DEFAULT_DOKOITSU_URL = "http://127.0.0.1:8787";
+export const DEFAULT_DOCOITSU_URL = "http://127.0.0.1:8787";
 
-// Live points gate: the settled `/parental` contract on dokoitsu
+// Live points gate: the settled `/parental` contract on docoitsu
 // (docs/spec_parental.md — GET allowance / POST spend {ms: DELTA, id?}).
 // The shadow gate stays embedded: `spend` always accrues locally and any
 // reachability gap degrades to the shadow cap — connected:false is honest,
 // never faked.
 export class HttpPointsGate implements PointsGateAdapter {
-  readonly name = "dokoitsu-http";
+  readonly name = "docoitsu-http";
   private readonly shadow: PointsGateAdapter;
   private readonly f: typeof fetch;
   private readonly refreshMs: number;
@@ -97,14 +97,14 @@ export class HttpPointsGate implements PointsGateAdapter {
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
-    private readonly baseUrl: string = DEFAULT_DOKOITSU_URL,
+    private readonly baseUrl: string = DEFAULT_DOCOITSU_URL,
     opts: {
       shadow?: PointsGateAdapter;
       fetchImpl?: typeof fetch;
       refreshMs?: number;
     } = {},
   ) {
-    this.shadow = opts.shadow ?? new DokoitsuPointsGate();
+    this.shadow = opts.shadow ?? new DocoitsuPointsGate();
     this.f = opts.fetchImpl ?? fetch;
     this.refreshMs = opts.refreshMs ?? 10_000;
   }
@@ -213,11 +213,11 @@ export function createPointsGate(
   now: Clock = systemClock,
   opts: { baseUrl?: string; fetchImpl?: typeof fetch } = {},
 ): PointsGateAdapter {
-  const shadow = new DokoitsuPointsGate(store, now);
+  const shadow = new DocoitsuPointsGate(store, now);
   if (kind === "local" || kind === "shadow") return shadow;
-  // auto/http/dokoitsu: the hybrid — live contract when reachable, shadow
+  // auto/http/docoitsu: the hybrid — live contract when reachable, shadow
   // ledger otherwise.
-  return new HttpPointsGate(opts.baseUrl ?? DEFAULT_DOKOITSU_URL, {
+  return new HttpPointsGate(opts.baseUrl ?? DEFAULT_DOCOITSU_URL, {
     shadow,
     fetchImpl: opts.fetchImpl,
   });
